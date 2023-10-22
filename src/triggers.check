@@ -1,0 +1,30 @@
+
+    {
+        "endpointId": "door_front",
+        "friendlyName": "Front Door",
+        "displayCategories": ["SMARTLOCK"],
+        "deviceAPI": "door/front",
+        "isLock": true
+    },
+    {
+        "endpointId": "door_downstairs",
+        "friendlyName": "Downstairs Door",
+        "displayCategories": ["SMARTLOCK"],
+        "deviceAPI": "door/front",
+        "isLock": true      
+    },
+    {
+        "endpointId": "door_apartment",
+        "friendlyName": "Apartment Door",
+        "displayCategories": ["SMARTLOCK"],
+        "deviceAPI": "door/apartment",
+        "isLock": true      
+    },
+
+    {
+        "endpointId": "living_room_AC",
+        "friendlyName": "Air Conditioner",
+        "displayCategories": ["THERMOSTAT"],
+        "deviceAPI": "ac/living_room_AC",
+        "isAC":true
+    }

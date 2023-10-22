@@ -1,0 +1,36 @@
+# Logs
+logs
+*.log
+
+# Dependency directories
+node_modules/
+
+# Optional npm cache directory
+.npm
+
+# Environment variables
+.env
+
+node_modules
+
+# Config files
+config/devices.json
+config/lights.json
+config/triggers.json
+
+# These don't contain any sensitive data so not bothering to exclude them.
+#config/deviceScenes.json
+#config/insteonKeypad.json
+#config/lightingScenes.json
+#config/macros.json
+
+# Folder for notes not for sharing
+private
+
+# Old versions
+_OLD
+_OLD/*
+
+# OS Files
+.DS_Store
+.vscode/*

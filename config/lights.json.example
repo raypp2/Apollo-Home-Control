@@ -1,0 +1,145 @@
+[
+{
+    "title": "Kitchen",
+    "id": "kitchen",
+    "icon": "icon-kitchen",
+    "type": "insteon",
+    "address": "XXXXXX",
+    "status": "",           // Storage of the lighting level (0-100)
+    "checked": true,        // Denotes the light checkbox state in the UI
+	"alexa": {
+		"invocations":["Kitchen"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
+},
+{
+    "title": "Dining Room",
+    "id": "diningRoom",
+    "icon": "icon-dining_room",
+    "type": "insteon",
+    "address": "XXXXXX",
+    "status": "",
+    "alexa": {
+		"invocations":["Dining Room"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
+},
+{
+    "title": "Living Room - Bookshelf",
+    "id": "livingRoomBookshelf",
+    "icon": "icon-lr_bookshelf",
+    "type": "insteon",
+    "address": "XXXXXX",
+    "status": "",
+    "alexa": {
+		"invocations":["Living Room Bookshelf", "Living Room Bookcase"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
+},
+{
+    "title": "Living Room - Couch",
+    "id": "livingRoomCouch",
+    "icon": "icon-lr_couch",
+    "type": "insteon",
+    "address": "XXXXXX",
+    "status": "",
+    "alexa": {
+		"invocations":["Living Room Couch"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
+},
+{
+    "title": "Office - Desk",
+    "id": "officeDesk",
+    "icon": "icon-of_desk",
+    "type": "insteon",
+    "address": "XXXXXX",
+    "status": "",
+    "alexa": {
+		"invocations":["Office Desk"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
+},
+{
+    "title": "Office - Wall",
+    "id": "officeWall",
+    "icon": "icon-of_wall",
+    "type": "insteon",
+    "address": "XXXXXX",
+    "status": "",
+    "alexa": {
+		"invocations":["Office Wall"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
+},
+{
+    "title": "Hall",
+    "id": "hall",
+    "icon": "icon-hall",
+    "type": "insteon",
+    "address": "XXXXXX",
+    "status": "",
+    "alexa": {
+		"invocations":["Hall", "Hallway"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
+},
+{
+    "title": "Giant P",
+    "id": "giantP",
+    "icon": "icon-giant_p",
+    "type": "hue-group",
+    "address": "5",
+    "status": "",
+    "alexa": {
+		"invocations":["Giant P", "Big P"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
+},
+{
+    "title": "Bedroom Color",
+    "id": "bedroomColor",
+    "icon": "icon-of_wall",
+    "type": "hue-group",
+    "address": "X",
+    "status": "",
+    "alexa": {
+		"invocations":["Bedroom color"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
+},
+{
+    "title": "Bedroom",
+    "id": "bedroom",
+    "icon": "icon-hall",
+    "type": "insteon",
+    "address": "XXXXXX",
+    "status": "",
+    "alexa": {
+		"invocations":["Bedroom"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
+},{
+	"id":"ceiling",
+	"title":"Ceiling",
+    "fixture":"adj",
+    "icon":"icon-of_wall",
+	"type": "dmxFixture",
+    "alexa": {
+        // Alexa, Turn [on/off] Ceiling
+		"invocations":["Ceiling"],
+        "displayCategories": ["SCENE_TRIGGER"],
+        "isDimmable": false
+	}
+}
+]

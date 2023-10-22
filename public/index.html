@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html ng-app="apollo">
+<head>
+    <link href="http://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+
+    <link rel="stylesheet" href="css/apollo_icons.css">
+    <link type="text/css" rel="stylesheet" href="css/materialize.min.css" media="screen,projection"/>
+    
+    <style>
+      .command-button {
+          display: inline-block;
+          padding: 4px 8px;
+          margin: 2px;
+          cursor: pointer;
+          background-color: #e0e0e0; /* A light gray background */
+          border-radius: 4px; /* Rounded corners for a "tag" feel */
+          transition: background-color 0.2s; /* Smooth transition for hover effect */
+      }
+  
+      .command-button:hover {
+          background-color: #bdbdbd; /* A slightly darker gray on hover */
+      }
+
+      .command-button:active {
+          background-color: #98bbd7; /* A slightly darker gray on hover */
+      }
+  </style>
+  
+  
+
+    <!-- Updated AngularJS to latest 1.8.x -->
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular-sanitize.js"></script>
+    
+    <script type="text/javascript">
+        var apollo = angular.module('apollo', ['ngSanitize']);
+
+        // Load Lights
+        apollo.controller('LightingDevices', function ($scope, $http, $interval) {
+
+            $scope.toggleDevice = function (deviceid, level) {
+                level = level ? 'off' : 'on';
+                $http.post('/api/lights/' + deviceid + '/' + level, '');
+            }
+
+            function fetchList() {
+                $http.get('/list/lights').then(function (response) {
+                    $scope.devices = response.data;
+                }).catch(function (error) {
+                    console.error('Error fetching lights:', error);
+                });
+            }
+
+            fetchList();
+
+            $interval(fetchList, 5000, 10);
+
+        });
+
+        // Load Lighting Scenes
+        apollo.controller('LightingScenes', function ($scope, $http, $interval) {
+
+        $scope.toggleDevice = function (deviceid, level) {
+            level = level ? 'off' : 'on';
+            $http.post('/api/lightingScenes/' + deviceid + '/' + level, '');
+        }
+
+        function fetchList() {
+            $http.get('/list/lightingScenes').then(function (response) {
+                $scope.devices = response.data;
+            }).catch(function (error) {
+                console.error('Error fetching lights:', error);
+            });
+        }
+
+        fetchList();
+
+        });
+
+        // Load Devices
+        apollo.controller('Devices', function ($scope, $http, $interval) {
+
+$scope.toggleDevice = function (deviceid, level) {
+    level = level ? 'off' : 'on';
+    $http.post('/api/devices/' + deviceid + '/' + level, '');
+}
+
+$scope.postCommand = function(deviceId, command) {
+    $http.post('/api/devices/' + deviceId + '/' + command, '').then(function(response) {
+        console.log('Command sent successfully:', response);
+    }).catch(function(error) {
+        console.error('Error sending command:', error);
+    });
+};
+
+function fetchList() {
+    $http.get('/list/devices').then(function (response) {
+        $scope.devices = response.data;
+        $scope.devices.forEach(obj => {
+            obj.commandList = [];
+            for (const key in obj.commands) {
+                if (obj.commands.hasOwnProperty(key)) {
+                    obj.commandList.push({ id: obj.id, command: key });
+                }
+            }
+        });
+    }).catch(function (error) {
+        console.error('Error fetching lights:', error);
+    });
+}
+
+fetchList();
+
+});
+
+
+
+        // Load Device Scenes
+        apollo.controller('DeviceScenes', function ($scope, $http, $interval) {
+
+        $scope.toggleDevice = function (deviceid, level) {
+            level = level ? 'off' : 'on';
+            $http.post('/api/deviceScenes/' + deviceid + '/' + level, '');
+        }
+
+        function fetchList() {
+            $http.get('/list/deviceScenes').then(function (response) {
+                $scope.devices = response.data;
+            }).catch(function (error) {
+                console.error('Error fetching lights:', error);
+            });
+        }
+
+        fetchList();
+
+        });
+
+        // Load Macros
+        apollo.controller('Macros', function ($scope, $http, $interval) {
+
+        $scope.toggleDevice = function (deviceid, level) {
+            level = level ? 'off' : 'on';
+            $http.post('/api/macros/' + deviceid + '/' + level, '');
+        }
+
+        function fetchList() {
+            $http.get('/list/macros').then(function (response) {
+                $scope.devices = response.data;
+            }).catch(function (error) {
+                console.error('Error fetching lights:', error);
+            });
+        }
+
+        fetchList();
+
+        });        
+
+
+
+    </script>
+
+
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+</head>
+
+<body>
+    <nav>
+      <div class="nav-wrapper">
+        <a href="#" class="brand-logo right">Apollo</a>
+        <ul id="nav-mobile" class="left hide-on-med-and-down">
+          <li><a href="#lights">Lights</a></li>
+          <li><a href="#lightingScenes">Lighting Scenes</a></li>
+          <li><a href="#devices">Devices</a></li>
+          <li><a href="#deviceScenes">Device Scenes</a></li>
+          <li><a href="#macros">Macros</a></li>
+          <li><a href="logs/">Logs</a></li>
+        </ul>
+      </div>
+    </nav>
+
+  <a name="lights"></a>
+  <!-- BEGIN Lights Angular Binding -->
+  <div ng-controller="LightingDevices"> 
+    <ul class="collection">
+      <li class="collection-header"><h4>&nbsp;&nbsp;&nbsp;Lighting</h4></li>
+
+      <li class="collection-item avatar" ng-repeat="device in devices">
+        <span class="{{device.icon}} circle"></span>
+        <span class="title">{{device.title}}</span>
+        <a href="#!" class="secondary-content">
+            {{device.status}}
+            <div class="switch">
+              <label>
+                <input type="checkbox" class="light" ng-model="device.checked" ng-click="toggleDevice(device.id,device.checked)">
+                <span class="lever"></span>
+              </label>
+            </div>
+        </a>
+      </li>
+
+    </ul>
+    </div>     
+    <!-- END Lights Angular Binding -->
+
+    <a name="lightingScenes"></a>
+    <!-- BEGIN Lighting Scenes Devices Angular Binding -->
+    <div ng-controller="LightingScenes"> 
+    <ul class="collection">
+      <li class="collection-header"><h4>&nbsp;&nbsp;&nbsp;Lighting Scenes</h4></li>
+
+      <li class="collection-item avatar" ng-repeat="device in devices">
+        <i class="material-symbols-outlined circle green" style="font-size: 30px">{{device.icon}}</i>
+        <span class="title">{{device.title}}</span>
+        <a href="#!" class="secondary-content">
+            {{device.status}}
+            <div class="switch">
+              <label>
+                <input type="checkbox" class="light" ng-model="device.checked" ng-click="toggleDevice(device.id,device.checked)">
+                <span class="lever"></span>
+              </label>
+            </div>
+        </a>
+      </li>
+
+    </ul>
+    </div>     
+    <!-- END Lighting Scenes Angular Binding -->
+
+    <a name="devices"></a>
+    <!-- BEGIN Devices Angular Binding -->
+    <div ng-controller="Devices"> 
+      <ul class="collection">
+        <li class="collection-header"><h4>&nbsp;&nbsp;&nbsp;Devices</h4></li>
+  
+        <li class="collection-item avatar" ng-repeat="device in devices">
+          <i class="material-symbols-outlined circle blue" style="font-size: 30px">{{device.icon}}</i>
+          <span class="title">{{device.title}}</span>
+          <p>
+            <span class="command-button" ng-repeat="cmd in device.commandList" ng-click="postCommand(cmd.id, cmd.command)">{{cmd.command}}</span>
+        </p>
+        
+          <a href="#!" class="secondary-content">
+              {{device.status}}
+              <div class="switch">
+                <label>
+                  <input type="checkbox" class="light" ng-model="device.checked" ng-click="toggleDevice(device.id,device.checked)">
+                  <span class="lever"></span>
+                </label>
+              </div>
+          </a>
+        </li>
+  
+      </ul>
+      </div>     
+      <!-- END Devices Angular Binding -->
+
+    <a name="deviceScenes"></a>
+    <!-- BEGIN Devices Scenes Angular Binding -->
+    <div ng-controller="DeviceScenes"> 
+      <ul class="collection">
+        <li class="collection-header"><h4>&nbsp;&nbsp;&nbsp;Device Scenes</h4></li>
+  
+        <li class="collection-item avatar" ng-repeat="device in devices">
+          <i class="material-symbols-outlined circle orange" style="font-size: 30px">{{device.icon}}</i>
+          <span class="title">{{device.title}}</span>
+          <a href="#!" class="secondary-content">
+              {{device.status}}
+              <div class="switch">
+                <label>
+                  <input type="checkbox" class="light" ng-model="device.checked" ng-click="toggleDevice(device.id,device.checked)">
+                  <span class="lever"></span>
+                </label>
+              </div>
+          </a>
+        </li>
+  
+      </ul>
+      </div>     
+      <!-- END Devices Angular Binding -->
+
+    <a name="macros"></a>
+    <!-- BEGIN Macros Angular Binding -->
+    <div ng-controller="Macros"> 
+      <ul class="collection">
+        <li class="collection-header"><h4>&nbsp;&nbsp;&nbsp;Macros</h4></li>
+  
+        <li class="collection-item avatar" ng-repeat="device in devices">
+          <i class="material-symbols-outlined circle purple" style="font-size: 30px">{{device.icon}}</i>
+          <span class="title">{{device.title}}</span>
+          <a href="#!" class="secondary-content">
+              {{device.status}}
+              <div class="switch">
+                <label>
+                  <input type="checkbox" class="light" ng-model="device.checked" ng-click="toggleDevice(device.id,device.checked)">
+                  <span class="lever"></span>
+                </label>
+              </div>
+          </a>
+        </li>
+  
+      </ul>
+      </div>     
+      <!-- END Macros Angular Binding -->
+
+
+    <!-- Loading jQuery from CDN -->
+    <script type="text/javascript" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="text/javascript" src="js/jquery.touchSwipe.min.js"></script>
+
+    <script type="text/javascript">
+        $('.light').on('click', function (e) {
+            var device = $(this).attr('id');
+            var level = $(this).prop('checked') ? 'on' : 'off';
+            $.post('/api/light/' + device + '/' + level);
+        });
+
+        $('.device').on('click', function (e) {
+            var device = $(this).attr('id');
+            var level = $(this).prop('checked') ? 'on' : 'off';
+            $.post('/api/' + device + '/' + level);
+        });
+    </script>
+
+    <script type="text/javascript" src="js/materialize.min.js"></script>
+</body>
+</html>

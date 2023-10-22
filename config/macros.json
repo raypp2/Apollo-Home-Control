@@ -1,0 +1,63 @@
+[	
+{
+	"id": "bedtimeMacro",
+	"title": "Bedtime",
+	"passOnOff":false,
+	"icon":"bedtime",
+	"commands": [
+		"devices/theater_projector/off",
+		"devices/anthem/off",
+		"lightingScenes/bedtime/on",
+		"devices/bedroom_projector/on_sleep"
+	],
+	"alexa": {
+		"invocations":["Bedtime", "Cuddles"],
+        "displayCategories": ["ACTIVITY_TRIGGER"]
+	}
+},{
+	"id": "awayMacro",
+	"title": "Away",
+	"invocation": "Away",				// Alexa, Turn [on/off] Away
+	"passOnOff":false,
+	"icon":"logout",
+	"commands": [
+		"lightingScenes/away/on",
+		"devices/anthem/off",
+		"devices/theater_projector/off",
+		"lightingScenes/button-d/off"	// Toggles the controlling button off after activated
+	],
+	"alexa": {
+		"invocations":["Away"],
+        "displayCategories": ["ACTIVITY_TRIGGER"]
+	}
+},{
+	"id": "movieMode",
+	"title":"Movie Mode",
+	"invocation": "Movie Mode",			// Alexa, Turn [on/off] Movie Mode
+	"passOnOff":true,
+	"icon":"movie",
+	"commands": [
+		"lightingScenes/movie-mode",
+		"deviceScenes/apple_tv",
+		"devices/shades/all"
+	],
+	"alexa": {
+		"invocations":["Movie Mode"],
+        "displayCategories": ["ACTIVITY_TRIGGER"]
+	}
+},{
+	"id": "raysMusic",
+	"title": "Ray's Music",
+	"invocation": "Ray's Music",		// Alexa, Turn [on/off] Ray's Music
+	"passOnOff":true,
+	"icon":"graphic_eq",
+	"commands": [
+		"deviceScenes/spotifyServerLivingRoom",
+		"devices/lrEchoSpotify"
+	],
+	"alexa": {
+		"invocations":["Ray's Music"],
+        "displayCategories": ["MUSIC_SYSTEM"]
+	}
+}
+]

@@ -1,0 +1,60 @@
+[
+    {
+      "id": "appleTv",
+      "title": "Apple TV",
+      "audioDevice": "anthem",
+      "audioInput": "input_apple_tv",
+      "videoDevice": "theaterProjector",
+      "blinkButton": "button-a",
+      "icon":"tv_remote",
+      // ,"lightingScene": "office"
+      "alexa": {
+        "invocations":["Apple TV"],
+        "displayCategories": ["STREAMING_DEVICE"]
+      }
+    },
+    {
+      "id": "chromeCast",
+      "title": "Chromecast",
+      "audioDevice": "anthem",
+      "audioInput": "input_chrome_cast",
+      "videoDevice": "theaterProjector",
+      "icon":"cast",
+      "alexa": {
+        "invocations":["Chrome Cast"],
+        "displayCategories": ["STREAMING_DEVICE"]
+      }
+    },
+    {
+      "id": "spotifyServerLivingRoom",
+      "title": "Spotify Server Living Room",
+      "audioDevice": "anthem",
+      "audioInput": "input_spotify_server",
+      "blinkButton": "button-b",
+      "icon":"graphic_eq"
+    },
+    {
+      "id": "playstation",
+      "title": "Playstation",
+      "audioDevice": "anthem",
+      "audioInput": "input_ps4_pro",
+      "videoDevice": "theaterProjector",
+      "icon":"stadia_controller",
+      "alexa": {
+        "invocations":["Playstation","PS5"],
+        "displayCategories": ["GAME_CONSOLE"]
+      }
+    },
+    {
+      "id": "apollo",
+      "title": "Apollo",
+      "audioDevice": "anthem",
+      "audioInput": "input_apollo",
+      "videoDevice": "theaterProjector",
+      "icon":"desktop_windows",
+      "alexa": {
+        "invocations":["Apollo"],
+        "displayCategories": ["STREAMING_DEVICE"]
+      }
+    }
+  ]

@@ -1,0 +1,60 @@
+[
+{
+    "device_id": "463AD8",
+    "gateways": [
+        {
+            "id": "000003",
+            "name": "A - Apple TV",
+            "command_on": "deviceScenes/apple_tv/on",
+            "command_off": "deviceScenes/apple_tv/off"
+        },
+        {
+            "id": "000004",
+            "name": "B - Music",
+            "command_on": "macros/rays_music/on",
+            "command_off": "macros/rays_music/off"
+        },
+        {
+            "id": "000005",
+            "name": "C - Hangout",
+            "command_on": "lightingScenes/hangout-mode/on",
+            "command_off": "lightingScenes/hangout-mode/off"
+        },
+        {
+            "id": "000006",
+            "name": "D - Away",
+            "command_on": "macros/away_macro/on",
+            "command_off": "macros/away_macro/off"
+        }
+    ]
+},
+{
+    "device_id": "2E87BD",
+    "gateways": [
+        {
+            "id": "000001",
+            "name": "A - AppleTV",
+            "command_on": "deviceScenes/apple_tv/on",
+            "command_off": "deviceScenes/apple_tv/off"
+        },
+        {
+            "id": "000002",
+            "name": "B - Ray's Music",
+            "command_on": "macros/rays_music/on",
+            "command_off": "macros/rays_music/off"
+        },
+        {
+            "id": "000003",
+            "name": "C - Hangout",
+            "command_on": "lightingScenes/hangout-mode/on",
+            "command_off": "lightingScenes/hangout-mode/off"
+        },
+        {
+            "id": "000004",
+            "name": "D - Air Conditioner",
+            "command_on": "devices/living_room_AC/temp_increase",
+            "command_off": "devices/living_room_AC/temp_decrease"
+        }
+    ]
+}
+]

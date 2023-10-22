@@ -1,0 +1,103 @@
+[
+{
+    "title": "Hangout Mode",
+    "id": "hangoutMode",
+    "insteon_group": "12",
+    "hue_scene": ["Jmm6PWTE6eauQcd", "7q0wCAPpc0hiD2T"],
+    "hue_group": "5",
+    "icon": "Chair",
+    "alexa": {
+		"invocations":["Hangout Mode","Hangout"],
+        "displayCategories": ["SCENE_TRIGGER"]
+	}
+},
+{
+    "title": "All Lights",
+    "id": "allLights",
+    "insteon_group": "13",
+    "hue_group": "0",
+    "icon": "Light Mode",
+    "alexa": {
+		"invocations":["All lights"],
+        "displayCategories": ["SCENE_TRIGGER"]
+	}
+},
+{
+    "title": "Living Room",
+    "id": "livingRoom",
+    "insteon_group": "11",
+    "hue_scene": "2IrHoXFPEmCl-oh",
+    "hue_group": "5",
+    "icon": "Chair",
+    "alexa": {
+		"invocations":["Living Room"],
+        "displayCategories": ["SCENE_TRIGGER"]
+	}
+},
+{
+    "title": "Office",
+    "id": "office",
+    "insteon_group": "3",
+    "hue_scene": "XIjC2KWCztZY9VA",
+    "icon": "Work",
+    "alexa": {
+		"invocations":["Office"],
+        "displayCategories": ["SCENE_TRIGGER"]
+	}
+},
+{
+    "title": "Movie Mode",
+    "id": "movie-mode",
+    "insteon_group": "10",
+    "hue_scene": ["bmxDPJOZ6JdiUkj", "jNRn7xEgNEW0Zpj"],
+    "hue_group": "5",
+    "icon": "Theaters"
+    // Not triggered directly via Alexa because this is run via a macro
+},
+{
+    "title": "Away",
+    "id": "away",
+    "insteon_group": "14",
+    "hue_scene": ["FH3N9PkhwPw9zxq", "ZQZV8rVXnKW5EOv"],
+    "icon": "Logout"
+    // Not triggered directly via Alexa because this is run via a macro
+},
+{
+    "title": "Bedtime",
+    "id": "bedtime",
+    "insteon_group": "10",
+    "hue_scene": ["FH3N9PkhwPw9zxq", "ZQZV8rVXnKW5EOv", "naBUUG0MM4bWAL2"],
+    "icon": "Bedtime"
+    // Not triggered directly via Alexa because this is run via a macro
+},
+{
+    "title": "Button-a",
+    "id": "button-a",
+    "insteon_group": "15"
+},
+{
+    "title": "Button-b",
+    "id": "button-b",
+    "insteon_group": "16"
+},
+{
+	"id":"wolf",
+	"title":"Wolf",
+	"dmx_scene": "Wolf",
+    "icon": "Pets",
+    "alexa": {
+		"invocations":["Wolf"],
+        "displayCategories": ["SCENE_TRIGGER"]
+	}
+},
+{
+	"id":"dmxManual",
+	"title":"DMX Manual",
+	"dmx_scene": "Manual",
+    "icon": "Swipe_Vertical",
+    "alexa": {
+		"invocations":["DMX Manual"],
+        "displayCategories": ["SCENE_TRIGGER"]
+	}
+}
+]
