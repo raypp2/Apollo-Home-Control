@@ -46,11 +46,15 @@ I've been a home automation enthusiast for nearly 20 years (since X10 ruled) and
 
 ## 🎛️ Capabilities & Features
 
+
 ![1 Alexa devices > 2 Smart Home Skills API > 3 AWS Lambda > 4 AWS SQS Queue > 5 Apollo Home Control](documentation/images/voiceDiagram.jpeg)
 
 ### Alexa Voice Control
 
-This is the primary mechanism of controlling my smart home. With the exception of room specific hardware switches (i.e. light switches), voice offers a better UX for both owners and guests than almost any other approach.
+> [!IMPORTANT] 
+> Deploy [Apollo Alexa Skill](https://github.com/raypp2/Apollo-Alexa-Skill) application for voice control via Alexa.
+
+Voice is the primary mechanism of controlling my smart home. With the exception of room specific hardware switches (i.e. light switches), voice offers a better UX for both owners and guests than almost any other approach.
 
 I remember the days of universal remotes where having to look through dozens of buttons and sequences could make if difficult to perform even the most simple tasks. The best interface is no interface. Short of telepathy, voice is the most intuitive and fast control surface. 
 
@@ -60,23 +64,7 @@ Smart home control was a feature of Amazon's Alexa Echo v1 with local control of
 
 Far more robust control has been enabled via the [Alexa Smart Home Skill API](https://developer.amazon.com/en-US/docs/alexa/smarthome/understand-the-smart-home-skill-api.html). This version of the application uses the following command pipeline:
 
->##### 1.0 Alexa Compatible Device
->Listens for the wake word, uses voice-to-text, and matches the spoken command into an intent model. For example "Alexa, turn `ON` the `kitchen light`" would identify the user's intent as a power command `ON` for the device `kitchen light` and send that command to the associated device ecosystem, in this case, the Apollo Home Control application.
-
->##### 2.0 Smart Home Skills API 
->Amazon Alexa's Smart Home Skills API provides a command scheme and workflow for many different types of devices. Refer to their [documentation](https://developer.amazon.com/en-US/docs/alexa/smarthome/understand-the-smart-home-skill-api.html) for more information.
-
->##### 3.0 AWS Lambda
->This pipeline uses a sibliing brige function that runs on AWS Lambda. While it would be possible to sent commands directly to Apollo Home Control application, that would require opening up a port inside the home network and managing the security that goes along with that. Lambda is reasonably fast, free at low execution volumes, and well integrated with the Alexa Smart Home Skill API.
-
->##### 4.0 AWS SQS Queue
->Posting each command to a pub-sub queue provides an adstraction layer that allows the local network controller application to pick up one or more commands within a defined expiration period. 
-
->##### 5.0 Apollo Home Control
->The commands are processed locally from the queue.
-
-**Limitations**
-The Alexa Smart Home API is bi-directional allowing both the push of commands and response from devices that they were successfully executed and to keep statuses in sync, such as when a light is on or off. This feedback can allow the user to know if there was an issue with reaching the device. Regarding status, like a light's on/off or dim state, this is more significant Alexa's visual interfaces such as the Alexa mobile app or on-screen visual feedback from the Echo Show product line. As these features provide little value for me, I've chosen not to impliment them. 
+This pipeline uses a [sibliing application](https://github.com/raypp2/Apollo-Alexa-Skill) that runs on AWS Lambda. While it would be possible to sent commands directly to the local Apollo Home Control instance, that would require opening up a port inside the home network and managing the security considerations. Lambda is reasonably fast, free at low execution volumes, and well integrated with the Alexa Smart Home Skill API.
 
 
 ### HTML Front-End
