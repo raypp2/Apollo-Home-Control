@@ -20,28 +20,7 @@
  *                  -  Forever for fallback & logging
  *                  -  Phillips Hue
  * 
- * 
  */
-
-/*
-
-
-TODO    Setup router
-TODO    Fix Office Lighting Scene
-TODO    Fix Away Scene
-
-TODO    DMX Update
-        - Toggle power supply when activating or deactivating scenes
-        - Make case insensitive
-        - Make manual off turn the fixture off
-        - Update scenes via JSON push
-
-TODO    Prepare for github
-            - Write documentation
-            - Break out separate applications for DMX Bridge, Somfy Bridge, etc.
-
-    
-*/
 
 // Load environment variables from .env file
 require('dotenv').config(); 

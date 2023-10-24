@@ -29,7 +29,7 @@
  * @param {number} debug_id - A unique identifier for debugging purposes.
  */
 function send_ip_command(debug_id, device_info, device_cmd, check_for_power){
-	// TODO: Check if we can move the net module to global scope
+
 	var net = require('net');
 	var client = new net.Socket();
 

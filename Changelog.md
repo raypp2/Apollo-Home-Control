@@ -5,6 +5,7 @@
 - Updated to latest version of most dependent node modules (i.e. AWS)
 - Updated to latest Alexa Smarthome Skills API & Payload format
 - Updated front-end frameworks (Angular, Materialize)
+- Replaced forever process manager with pm2
 
 #### Major updates - Code Maintainability 
 - Separated code into logical modules

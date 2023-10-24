@@ -26,6 +26,13 @@
 // var http = require('http');
 
 function send_somfy_command (device_address, device_port, device_id, device_command,operation_num) {
+
+  device_command = device_command.toLowerCase();
+  // Default ON command. This happens via the web interface.
+  if(device_command != ("off" || "stop")) {
+    device_command = "on";
+  }
+
 	var bridge_command = {
 	  host: device_address,
 	  port: device_port,

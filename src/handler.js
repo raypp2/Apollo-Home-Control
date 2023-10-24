@@ -90,12 +90,10 @@ function handleRequest(request, response){
             return;
         
         case "LIGHTS":
-            // TODO Add response for lighting device command
             lighting_device_command(logging.operation_num, apiDevice, apiCommand);
             return;
 
         case "LIGHTINGSCENES":
-            // TODO Add response for lighting scene command
             scene_command (logging.operation_num, apiDevice, apiCommand);
             return;
 
@@ -185,7 +183,6 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
         case "ip_control":
             console.log("%d - IP Control device found", nextDebugId);
             send_ip_command(nextDebugId, curDevice, curExecute, false);
-            // TODO: Refactor IP Control to use consistent format
             break;
         case "findMyIphone":
             console.log("%d - Find My iPhone device found", nextDebugId);
@@ -193,8 +190,9 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
             break;
         case "Somfy-Bridge":
             console.log("%d - Somfy Bridge device found", nextDebugId);
+            if(apiCommand=="OFF")
+                apiParam1="off";
             send_somfy_command(curDevice.address,curDevice.port,curExecute,apiParam1,nextDebugId);
-            // TODO: Refactor Somfy Control to use param for on/off command & operation_num
             break;
         case "spotify":
             console.log("%d - Spotify device found", nextDebugId);

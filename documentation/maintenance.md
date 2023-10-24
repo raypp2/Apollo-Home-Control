@@ -6,25 +6,23 @@
 
 Restart the server
 
-    shutdown -r now
+```bash
+shutdown -r now
+```
 
-Manually start bridge
+## PM2
 
-    node apollo_home_control_v5.0.js
-
-
-
-## Forever
-
-A node.js program that ensures our applications runs continuously by restarting the applications when they crash and logging console outputs to files that are accessed via the web server for bugging of issues when they occur.
+PM2 is a daemon process manager that ensures our applications run continuously by restarting the applications when they crash and logging console outputs to files that are accessed via the web server for bugging of issues when they occur.
 
 Usage:
 
-    forever start apollo_forever.json 
-    forever list
-    forever stopall
-    forever restartall
-    forever restart 1
+```bash
+pm2 start ecosystem.config.js 
+pm2 ls
+pm2 stop all
+pm2 restart all
+pm2 restart 1
+```
 
 ## Homebridge
 
@@ -32,8 +30,9 @@ http://beaglebone.local:8581
 
 Useful Commands:
 
-    systemctl status homebridge
-    systemctl status homebridge
-    sudo systemctl start homebridge
-    sudo systemctl enable homebridge
-    journalctl -f -u homebridge
+```bash
+systemctl status homebridge
+sudo systemctl start homebridge
+sudo systemctl enable homebridge
+journalctl -f -u homebridge
+```

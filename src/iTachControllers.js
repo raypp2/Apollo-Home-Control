@@ -24,7 +24,7 @@
  * 					- https://www.globalcache.com/products.html
  */
 
-	
+var net = require('net');
 
 /**
  * Sends a serial command to an iTach device.
@@ -34,8 +34,6 @@
  * @param {number} debug_id - The ID for debugging purposes.
  */
 function send_serial_command(iTach_address, serial_cmd, debug_id){
-	// TODO: Check if we can move the net module to global scope
-	var net = require('net');
 
 	serial_cmd = serial_cmd.split("~");	 // Split multiple commands into array
 
@@ -82,8 +80,6 @@ function send_serial_command(iTach_address, serial_cmd, debug_id){
  * @param {number} debug_id - A unique identifier for debugging purposes.
  */
 function send_cc_command(iTach_address, serial_cmd, debug_id){
-	// TODO: Check if we can move the net module to global scope
-	var net = require('net');
 
 	serial_cmd = serial_cmd.split("~");	 // Split multiple commands into array
 
@@ -131,8 +127,6 @@ function send_cc_command(iTach_address, serial_cmd, debug_id){
  * @param {number} debug_id - The ID used for debugging purposes.
  */
 function send_ir_command(iTach_address, serial_cmd, debug_id){
-	// TODO: Check if we can move the net module to global scope
-	var net = require('net');
 
 	serial_cmd = serial_cmd.split("~");	 // Split multiple commands into array
 

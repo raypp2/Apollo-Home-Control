@@ -27,9 +27,9 @@ Node v20.8.0
 
 ```bash
 cd ~
-git clone https://github.com/your-username/my-node-app.git
-mv my-node-app apollo_home_control
-cd my-node-app
+git clone https://github.com/raypp2/Apollo-Home-Control.git
+mv Apollo-Home-Control apollo_home_control
+cd apollo_home_control
 npm install
 ```
 
@@ -60,29 +60,25 @@ Similarly, you will need to setup the config files that are in the config folder
 Samples and sytax are provided in this repo. Note that triggers.json is automatically generated. 
 
 
-## Setup For Service at Startup (recommended)
+## Setup Daemon Process Manager (recommended)
 
-Run:
+Start application in PM2
 
 ```bash
-su
-crontab -u root -e
+npm install pm2@latest -g
+pm2 start ecosystem.config.js
 ```
 
-At the end of the file we use this code:
-
-```
-@reboot /usr/bin/forever start /home/debian/apollo_home_control/apollo_forever.json
-@reboot /usr/bin/forever start /home/debian/somfy-bridge/somfy_forever.json
+Setup pm2.io: Monitoring & Diagnostic Web Interface
+```bash
+pm2 plus
 ```
 
-Confirm with: 
-
-```bash   
-crontab -u root -l 
+Configure to run on startup
+```bash
+pm2 startup
+pm2 save
 ```
-
-[Reference](http://stackoverflow.com/questions/13385029/automatically-start-forever-node-on-system-restart) 
 
 
 ## Setup Log Rotation 
