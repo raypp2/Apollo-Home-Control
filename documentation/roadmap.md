@@ -1,12 +1,10 @@
 [Overview](../README.md) &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; [🧭 Installation](./installation.md) &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; [🛠️ Maintenance](./maintenance.md) &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; <u>🔮 Roadmap</u>
 
 ### To Fix
-1. Crash caused by: Uncaught Error Error: connect ENETUNREACH 192.168.X.X:25105
+1. Fix PM2 Monitor Setup
 2. Fix Away Scene
 3. Fix Office Lighting Scene
 4. DMX Update
-  - Toggle power supply when activating or deactivating scenes
-  - Make case insensitive
   - Make manual off turn the fixture off
   - Update scenes via JSON push
 5. Troubleshoot echo link inconsistently connecting to receiver

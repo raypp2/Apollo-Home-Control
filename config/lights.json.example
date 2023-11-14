@@ -139,7 +139,7 @@
         // Alexa, Turn [on/off] Ceiling
 		"invocations":["Ceiling"],
         "displayCategories": ["SCENE_TRIGGER"],
-        "isDimmable": false
+        "isDimmable": true
 	}
 }
 ]

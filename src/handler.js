@@ -177,7 +177,7 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
             send_ir_command(curDevice.address,curExecute,nextDebugId);
             break;
         case "iTach_CC":
-            console.log("%d - iTach Contact Closure device found");
+            console.log("%d - iTach Contact Closure device found", nextDebugId);
             send_cc_command(curDevice.address,curExecute,nextDebugId);
             break;
         case "ip_control":
@@ -196,7 +196,8 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
             break;
         case "spotify":
             console.log("%d - Spotify device found", nextDebugId);
-            spotifySwitchPlay(curDevice.address,nextDebugId);
+            if(apiCommand=="ON")
+                spotifySwitchPlay(curDevice.address,nextDebugId);
             break;
         default:
             console.log("%d - Device type not found", nextDebugId);

@@ -8,7 +8,8 @@
     "icon": "Chair",
     "alexa": {
 		"invocations":["Hangout Mode","Hangout"],
-        "displayCategories": ["SCENE_TRIGGER"]
+        "displayCategories": ["SCENE_TRIGGER"],
+        "isDimmable": false
 	}
 },
 {
@@ -19,7 +20,8 @@
     "icon": "Light Mode",
     "alexa": {
 		"invocations":["All lights"],
-        "displayCategories": ["SCENE_TRIGGER"]
+        "displayCategories": ["SCENE_TRIGGER"],
+        "isDimmable": false
 	}
 },
 {
@@ -31,7 +33,8 @@
     "icon": "Chair",
     "alexa": {
 		"invocations":["Living Room"],
-        "displayCategories": ["SCENE_TRIGGER"]
+        "displayCategories": ["SCENE_TRIGGER"],
+        "isDimmable": false
 	}
 },
 {
@@ -42,7 +45,8 @@
     "icon": "Work",
     "alexa": {
 		"invocations":["Office"],
-        "displayCategories": ["SCENE_TRIGGER"]
+        "displayCategories": ["SCENE_TRIGGER"],
+        "isDimmable": false
 	}
 },
 {
@@ -87,7 +91,8 @@
     "icon": "Pets",
     "alexa": {
 		"invocations":["Wolf"],
-        "displayCategories": ["SCENE_TRIGGER"]
+        "displayCategories": ["SCENE_TRIGGER"],
+        "isDimmable": true
 	}
 },
 {
@@ -97,7 +102,8 @@
     "icon": "Swipe_Vertical",
     "alexa": {
 		"invocations":["DMX Manual"],
-        "displayCategories": ["SCENE_TRIGGER"]
+        "displayCategories": ["SCENE_TRIGGER"],
+        "isDimmable": false
 	}
 }
 ]

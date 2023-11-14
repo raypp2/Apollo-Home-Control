@@ -1,5 +1,25 @@
 [	
 {
+	"id": "webcamMacro",
+	"title": "Webcam",
+	"passOnOff":true,
+	"icon":"bedtime",
+	"commands": [
+		"lights/webcam",
+		"lights/hair-light",
+		"lights/christmasTree/on",
+		"lights/officeDesk/off",
+		"lights/officeWall/off",
+		"lights/diningRoom/50",
+		"lights/kitchen/on",
+		"lights/livingRoomBookshelf/40"
+	],
+	"alexa": {
+		"invocations":["Webcam"],
+		"displayCategories": ["ACTIVITY_TRIGGER"]
+	}
+},
+{
 	"id": "bedtimeMacro",
 	"title": "Bedtime",
 	"passOnOff":false,
@@ -17,7 +37,6 @@
 },{
 	"id": "awayMacro",
 	"title": "Away",
-	"invocation": "Away",				// Alexa, Turn [on/off] Away
 	"passOnOff":false,
 	"icon":"logout",
 	"commands": [
@@ -33,7 +52,6 @@
 },{
 	"id": "movieMode",
 	"title":"Movie Mode",
-	"invocation": "Movie Mode",			// Alexa, Turn [on/off] Movie Mode
 	"passOnOff":true,
 	"icon":"movie",
 	"commands": [
@@ -48,7 +66,6 @@
 },{
 	"id": "raysMusic",
 	"title": "Ray's Music",
-	"invocation": "Ray's Music",		// Alexa, Turn [on/off] Ray's Music
 	"passOnOff":true,
 	"icon":"graphic_eq",
 	"commands": [

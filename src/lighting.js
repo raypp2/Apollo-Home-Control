@@ -32,19 +32,21 @@
 'use strict';
 
 
-const { insteonListenerStart }                              // Insteon Listener module
+const { insteonListenerStart }                  // Insteon Listener module
 = require('./lightingInsteonListener');  
 
 
-const { insteon_device_command,                                 // Insteon lighting module
+const { insteon_device_command,                 // Insteon lighting module
         insteon_scene_command }
          = require('./lightingInsteon.js');
-const { hue_group_command,                                      // Philips Hue lighting module        
+const { hue_group_command,                      // Philips Hue lighting module        
         hue_scene_command }
          = require('./lightingPhilipsHue.js');
 const { dmx_scene_command,
         dmx_fixture_command }
           = require('./lightingDmx');
+const { shelly_command }                        // Shelly device module
+           = require('./lightingShelly.js');
 
 
 // Load variables
@@ -74,8 +76,28 @@ function lighting_device_command (operation_num, device, lighting_command) {
           hue_group_command(operation_num, lights_new[i].address, lighting_command);
           break;
         case 'dmxFixture':
-          console.log("%d - Setting DMX Fixture %s to preset %s with command %s",operation_num, lights_new[i].fixture, lights_new[i].id, lighting_command);
+          console.log("%d - Setting DMX Fixture: %s", operation_num, lights_new[i].fixture); 
+          console.log("%d - Preset: %s", operation_num, lights_new[i].id);
+          console.log("%d - Command: %s", operation_num, lighting_command);
           dmx_fixture_command(operation_num, lights_new[i].fixture, lights_new[i].id, lighting_command);
+          if(lighting_command=="OFF"){
+            lights_new[i].checked = false;
+            lights_new[i].status = 0;
+          } else if(lighting_command=="ON"){
+              lights_new[i].checked = true;
+              lights_new[i].status = 100;
+          }
+          break;
+        case 'shelly':
+          console.log("%d - Turning Shelly %s to %s",operation_num, lights_new[i].address, lighting_command);
+          shelly_command(operation_num, lights_new[i].address, lighting_command);
+          if(lighting_command=="OFF"){
+              lights_new[i].checked = false;
+              lights_new[i].status = 0;
+          } else if(lighting_command=="ON"){
+              lights_new[i].checked = true;
+              lights_new[i].status = 100;
+          }
           break;
         default:
           console.log("%d - ERR: Light Type Not Recognized: %s", operation_num, lights_new[i].type);

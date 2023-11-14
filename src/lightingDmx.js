@@ -9,6 +9,7 @@
  *                  - Support for DMX microcontroller bridge via API
  *                  - Turn on/off a DMX scene
  *                  - Turn on/off a DMX Fixture's Preset
+ *                  - Dim fixture or scene to a level (0-100)
  * 
  *                 Dependencies:
  *                - Axios - Makes HTTP requests
@@ -26,16 +27,29 @@ const api = axios.create({
 });
 
 function dmx_scene_command(debugId, sceneId, command) {
+    
+    let level = -1; // Default -1 will not override the preset value
+    let data;
+
+    // If the command is a number
+    if (!isNaN(command)) {
+        // Set the dim level that will override the preset value
+        level = command;
+        command = "dim";
+        data = `id=${sceneId}&command=${command}&level=${level}`;
+    } else {
+        // Otherwise, just pass the command
+        command = command.toLowerCase();
+        data = `id=${sceneId}&command=${command}`;
+    }
+
     // Ensure the inputs are valid before making the request
-    command = command.toLowerCase();
-    const validCommands = ['on', 'off'];
+    const validCommands = ['on', 'off', 'dim'];
 
     if (!validCommands.includes(command)) {
         console.error('%d - Invalid scene name or command provided.', debugId);
         return Promise.reject('Invalid input');
     }
-
-    const data = `id=${sceneId}&command=${command}`;
 
     api.post('/updateScene', data)
         .then(response => {
@@ -47,10 +61,21 @@ function dmx_scene_command(debugId, sceneId, command) {
 }
 
 function dmx_fixture_command(debugId, fixtureId, preset, command) {
-
-    command = command.toLowerCase();
     preset = preset.toLowerCase();
-    const data = `id=${fixtureId}&command=${command}&preset=${preset}`;
+    let level = -1; // Default -1 will not override the preset value
+    let data;
+
+    // If the command is a number
+    if (!isNaN(command)) {
+        // Set the dim level that will override the preset value
+        level = command;
+        command = "dim";
+        data = `id=${fixtureId}&command=${command}&preset=${preset}&level=${level}`;
+    } else {
+        // Otherwise, just pass the command
+        command = command.toLowerCase();
+        data = `id=${fixtureId}&command=${command}&preset=${preset}`;
+    } 
 
     api.post('/updateFixture', data)
         .then(response => {

@@ -47,7 +47,7 @@ function buildTriggers(){
                 "displayCategories": light.alexa.displayCategories,
                 "apiModule": "LIGHTS",
                 "apiDevice": light.id,
-                "isDimmable": light.alexa.isDimmable,
+                "isDimmable": light.alexa.isDimmable
             });
             }
         }
@@ -65,7 +65,8 @@ function buildTriggers(){
                     "friendlyName": lightingScene.alexa.invocations[index],
                     "displayCategories": lightingScene.alexa.displayCategories,
                     "apiModule": "LIGHTINGSCENES",
-                    "apiDevice": lightingScene.id
+                    "apiDevice": lightingScene.id,
+                    "isDimmable": lightingScene.alexa.isDimmable
                 });
             }
         }

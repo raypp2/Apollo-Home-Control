@@ -25,6 +25,7 @@ Designed for both learning and practicality, it offers a more stripped by approa
 -  Apple Homekit (via Homebridge)
 -  GlobalCache iTach (serial, IR, & Contact Closure devices)
 -  IP control devices
+-  Shelly Plug Modules
 -  Spotify
 
 

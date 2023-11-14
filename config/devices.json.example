@@ -28,7 +28,6 @@
 	"address": "###.###.###.###",
 	"icon": "videocam",
 	"commands": {
-		// TODO: Check if updated special characters work
 		"on": "\u0002PON\u0003",
 		"off": "\u0002POF\u0003",
 		// Alexa, Turn [on/off] bedroom projector sleep
