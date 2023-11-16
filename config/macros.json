@@ -76,5 +76,18 @@
 		"invocations":["Ray's Music"],
         "displayCategories": ["MUSIC_SYSTEM"]
 	}
+},{
+	"id": "christmasLights",
+	"title": "Christmas Lights",
+	"passOnOff":true,
+	"icon":"bedtime",
+	"commands": [
+		"lights/christmasTree",
+		"lights/wreath-wall"
+	],
+	"alexa": {
+		"invocations":["Christmas Lights"],
+        "displayCategories": ["ACTIVITY_TRIGGER"]
+	}
 }
 ]

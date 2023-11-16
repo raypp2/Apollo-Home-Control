@@ -1,3 +1,9 @@
+## Version 5.0.1  -  Nov 15, 2023
+- Added support for Shelly devices (on/off)
+- Added support for DMX dimming
+- Added support for WLED devices (on/off)
+- Fixed issue with Spotify where device ID would change. Use device name instead.
+
 ## Version 5.0  -  Oct 12, 2023
 
 #### Major updates - Frameworks
