@@ -190,9 +190,16 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
             break;
         case "Somfy-Bridge":
             console.log("%d - Somfy Bridge device found", nextDebugId);
-            if(apiCommand=="OFF")
-                apiParam1="off";
-            send_somfy_command(curDevice.address,curDevice.port,curExecute,apiParam1,nextDebugId);
+
+            // Via the web interface, the ON and OFF commands should pass through as 
+            // the parameter as if they were received via the API.
+            if(apiCommand=="OFF"){
+                apiParam1="OFF";
+            }else if(apiCommand=="ON"){
+                apiParam1="ON";
+            }
+            
+            send_somfy_command(curDevice.address,curExecute,apiParam1,nextDebugId);
             break;
         case "spotify":
             console.log("%d - Spotify device found", nextDebugId);

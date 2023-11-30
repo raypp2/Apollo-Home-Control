@@ -5,64 +5,70 @@
  * @author Ray Perfetti
  * @date 2023-10-05
  * 
- * @description   Controls Somfy shades via a separate bridge application that uses
- *                the ZRTSII Z-Wave to RTS Plug-in Wall Module.
+ * @description   Controls Somfy shades via a separate bridge application ESPSomfy-RTS
+ *                https://github.com/rstrouse/ESPSomfy-RTS
+ * 
+ *                The hardware is an ESP32 with a CC1101 Transceiver costsing about $12.
  *  
  *                If you've messed around with Somfy, you know that the RTS controllers are absurdly expensive.
- *                The Universal RTS Interface II (URTSI II-16 Channel) is $400+ and they break easily.
- *                By contrast, the ZRTSII Z-Wave to RTS Plug-in Wall Module is $100 on eBay.
- *                With a cheap USB Z-Wave stick, you can control 16 shades for $130 or less.
+ *                The Universal RTS Interface II (URTSI II-16 Channel) is $400+
  * 
  *                This module just sends the command. Transmission to the shades is handled by the bridge.
- *                GITHUB URL
- * 
- *                References:
- *                - https://www.somfysystems.com/en-us/products/1811265/z-wave-to-rts-plug-in-wall-module-zrtsi-16-channel
- * 
  * 
  */
 
-// Uncomment for local testing
-// var http = require('http');
+const http = require('http');
 
-function send_somfy_command (device_address, device_port, device_id, device_command,operation_num) {
+function send_somfy_command (address, id, command, operation_num) {
 
-  if(device_command) { device_command = device_command.toLowerCase(); }
-  // Default ON command. This happens via the web interface.
-  if(device_command != ("off" || "stop")) {
-    device_command = "on";
+  let urlCommand;
+
+  // See documentation @ https://github.com/rstrouse/ESPSomfy-RTS/wiki/Integrations
+  switch (command) {
+      case "ON":
+          urlCommand = "command=down";
+          break;
+
+      case "OFF":
+          urlCommand = "command=up";
+          break;
+
+      case "STOP":
+          urlCommand = "command=my";
+          break;
+
+      default:
+          if(!command){
+            // When no command is passed, we assume ON
+            urlCommand = "command=down";
+          } else if(!isNaN(command)){
+              // If the command is a number, it's a percentage [0-100] that the shade should move to
+              urlCommand = "target=" + command;
+          } else {
+              console.log("%d - ERR: Command Not Recognized: %s", operation_num, command);
+              return; // Exit the function if the command is not recognized
+          }
   }
 
-	var bridge_command = {
-	  host: device_address,
-	  port: device_port,
-	  method: 'POST',
-	  path: '/' + device_id + '/' + device_command
-	};
+  const url = `http://${address}/shadeCommand?shadeId=${id}&${urlCommand}`;
+  console.log("%d - URL: %s", operation_num, url);
 
-	var str = '';
+  http.get(url, (resp) => {
+      let data = '';
 
-    //console.log("%d - Sending Command: %s", operation_num, device_command);
-
-    var req = http.request(bridge_command, function(response) {
-      
-
-      response.on('data', function (chunk) {
-        str += chunk;
+      resp.on('data', (chunk) => {
+          data += chunk;
       });
 
-      response.on('end', function () {
-      // Add error handling for no response
-        console.log("%d - %s", operation_num, str);
+      resp.on('end', () => {
+          console.log("%d - Response: %s", operation_num, data);
       });
 
-    });
+  }).on("error", (err) => {
+      console.log("%d - Error: %s", operation_num, err.message);
+  });
 
-	req.on('error', function(err) {
-	console.log("%d - ERROR: %s", operation_num, err);
-	});
-
-	req.end();
+  console.log("%d - Sent Command: %s", operation_num, command);
 }
 
 module.exports = {

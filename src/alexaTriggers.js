@@ -114,6 +114,8 @@ function buildTriggers(){
     let isLock = false;
     let isAC = false;
     let isSpeaker = false;
+    let isPercentageController = false;
+
     for (const device of devices) {
 
         if(device.alexa) {
@@ -139,6 +141,11 @@ function buildTriggers(){
                 apiModule = "SPEAKERS";
             }
 
+            isPercentageController = false;
+            if (device.alexa.isPercentageController){
+                isPercentageController = true;
+            }
+
 
             for (const [index, invocation] of device.alexa.invocations.entries()) {
 
@@ -159,7 +166,8 @@ function buildTriggers(){
                     "apiCommand": apiCommand,
                     "isLock": isLock,
                     "isAC": isAC,
-                    "isSpeaker": isSpeaker
+                    "isSpeaker": isSpeaker,
+                    "isPercentageController": isPercentageController
                 });
 
             }
