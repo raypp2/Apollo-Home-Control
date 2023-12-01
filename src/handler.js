@@ -37,7 +37,8 @@ const { send_ip_command }                       // IP Devices
 const { send_somfy_command }                    // Somfy Shades
         = require('./somfyBridge');
 
-const { spotifySwitchPlay }                     // Spotify Playback Control
+const { spotifySwitchPlay,                      // Spotify Playback Control
+        spotifyStopPlay }                     
         = require('./spotify');
 
 const { find_my_iphone_alert }                  // Find My iPhone Alert
@@ -203,8 +204,13 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
             break;
         case "spotify":
             console.log("%d - Spotify device found", nextDebugId);
-            if(apiCommand=="ON")
-                spotifySwitchPlay(curDevice.address,nextDebugId);
+            if(apiCommand=="ON") {
+                spotifySwitchPlay(curDevice.address,false,nextDebugId);
+            } else if(apiCommand=="OFF") {
+                spotifyStopPlay(curDevice.address,nextDebugId);
+            } else {
+                spotifySwitchPlay(curDevice.address,curExecute,nextDebugId);
+            }
             break;
         default:
             console.log("%d - Device type not found", nextDebugId);

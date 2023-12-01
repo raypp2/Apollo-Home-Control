@@ -1,3 +1,7 @@
+## Version 5.0.2  -  Dec 1, 2023
+- Added support to play Spotify URI (Song, Playlist, Album) and stop playback
+- Replaced Somfy controller with ESPSomfyRTS
+
 ## Version 5.0.1  -  Nov 15, 2023
 - Added support for Shelly devices (on/off)
 - Added support for DMX dimming

@@ -37,7 +37,7 @@ var spotifyApi = new SpotifyWebApi({
     redirectUri: process.env.spotifyRedirectUri
 });
 
-function spotifySwitchPlay(deviceName, debug_id) {
+function spotifySwitchPlay(deviceName, context_uri, debug_id) {
 
 	// ** Never uncomment these lines unless for debugging. They write sensitive data to the console.
     // console.log("%d - Credentials", debug_id, `Client ID: ${process.env.spotifyClientId}`);
@@ -80,23 +80,35 @@ function spotifySwitchPlay(deviceName, debug_id) {
 
                     var deviceToSwitch = foundDevice.id;
 
-                    function transferAttempt(num) {
-                        if (playbackData.body.is_playing) {
-                            spotifyApi.transferMyPlayback([deviceToSwitch])
-                                .then(function(data) {
-                                    console.log("%d - Transferred playback to: %s", debug_id, deviceName);
-                                }, function(err) {
-                                    handleTransferError(err, num);
-                                });
-                        } else {
-                            // Add the play flag if not already playing
-                            spotifyApi.transferMyPlayback([deviceToSwitch], {"play": true})
-                                .then(function(data) {
-                                    console.log("%d - Transferred Player & Started Playback on: %s", debug_id, deviceName);
-                                }, function(err) {
-                                    handleTransferError(err, num);
-                                });
-                        }
+                    function transferPlayback(num) {
+                        spotifyApi.transferMyPlayback([deviceToSwitch], {"play": false})
+                            .then(function() {
+                                console.log("%d - Transferred playback to: %s", debug_id, deviceName);
+
+                                if (context_uri) {
+                                    // Play a specific URI (album, artist, playlist) if provided
+                                    spotifyApi.play({
+                                        "device_id": deviceToSwitch,
+                                        "context_uri": context_uri
+                                    }).then(function() {
+                                        console.log("%d - Started playback of context: %s on device: %s", debug_id, context_uri, deviceName);
+                                    }).catch(function(err) {
+                                        console.log('%d - Error starting playback of context on new device:', debug_id, err);
+                                    });
+                                }else {
+                                    // If music was playing, resume it on the new device
+                                    spotifyApi.play({
+                                        "device_id": deviceToSwitch
+                                    }).then(function() {
+                                        console.log("%d - Resumed playback on new device: %s", debug_id, deviceName);
+                                    }).catch(function(err) {
+                                        console.log('%d - Error resuming playback on new device:', debug_id, err);
+                                    });
+                                }
+                                // If no context_uri is provided and music was playing, it will continue playing on the new device without restarting
+                            }, function(err) {
+                                handleTransferError(err, num);
+                            });
                     }
 
                     function handleTransferError(err, num) {
@@ -111,7 +123,7 @@ function spotifySwitchPlay(deviceName, debug_id) {
                     }
 
                     // Kickoff first run immediately
-                    transferAttempt(0);
+                    transferPlayback(0);
                 });
         })
         .catch(function(err) {
@@ -119,6 +131,52 @@ function spotifySwitchPlay(deviceName, debug_id) {
         });
 }
 
+function spotifyStopPlay(deviceName, debug_id) {
+    spotifyApi.setAccessToken(process.env.spotifyRefreshToken);
+    spotifyApi.setCredentials({
+        'refreshToken': process.env.spotifyRefreshToken
+    });
+
+    spotifyApi.refreshAccessToken()
+        .then(function(data) {
+            spotifyApi.setAccessToken(data.body['access_token']);
+            console.log("%d - Refreshed Spotify Auth Token", debug_id);
+
+            return spotifyApi.getMyDevices();
+        })
+        .then(function(devicesData) {
+            var targetDevice = devicesData.body.devices.find(device => device.name === deviceName);
+
+            if (!targetDevice) {
+                console.log("%d - Device not found: %s", debug_id, deviceName);
+                return Promise.reject('Device not found');
+            }
+
+            return spotifyApi.getMyCurrentPlaybackState();
+        })
+        .then(function(playbackData) {
+            if (playbackData.body && playbackData.body.device && playbackData.body.device.name === deviceName) {
+                return spotifyApi.pause();
+            } else {
+                console.log("%d - Target device is not currently active: %s", debug_id, deviceName);
+                return Promise.reject('Target device is not currently active');
+            }
+        })
+        .then(function() {
+            console.log("%d - Playback paused on device: %s", debug_id, deviceName);
+        })
+        .catch(function(err) {
+            if (typeof err === 'string') {
+                // Custom error message
+                console.log('%d - Error:', debug_id, err);
+            } else {
+                // API error
+                console.log('%d - Error pausing playback on device:', debug_id, err);
+            }
+        });
+}
+
 module.exports = {
-	spotifySwitchPlay
+	spotifySwitchPlay,
+    spotifyStopPlay
 }

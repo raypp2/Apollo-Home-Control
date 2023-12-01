@@ -89,5 +89,23 @@
 		"invocations":["Christmas Lights"],
         "displayCategories": ["ACTIVITY_TRIGGER"]
 	}
+},{
+	"id": "christmasWonderland",
+	"title": "Christmas Wonderland",
+	"passOnOff":true,
+	"icon":"bedtime",
+	"commands": [
+		"lightingScenes/christmas",
+		"lights/christmasTree",
+		"lights/wreath-wall",
+		"lights/led-art-wall",
+		"lights/giantP",
+		"deviceScenes/spotifyServerLivingRoom",
+		"devices/lrEchoSpotify/christmas" //Christmas Classics Playlist
+	],
+	"alexa": {
+		"invocations":["Christmas Wonderland"],
+        "displayCategories": ["ACTIVITY_TRIGGER"]
+	}
 }
 ]

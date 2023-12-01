@@ -94,6 +94,21 @@
         "displayCategories": ["SCENE_TRIGGER"],
         "isDimmable": true
 	}
+},{
+	"id":"mirrorball",
+	"title":"Mirror Ball",
+	"dmx_scene": "mirrorball",
+    "icon": "Pets",
+    "alexa": {
+		"invocations":["Mirror Ball"],
+        "displayCategories": ["SCENE_TRIGGER"],
+        "isDimmable": true
+	}
+},{
+	"id":"christmas",
+	"title":"Christmas",
+	"dmx_scene": "christmas",
+    "icon": "Pets"
 },
 {
 	"id":"dmxManual",
