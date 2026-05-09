@@ -8,21 +8,20 @@ node_modules/
 # Optional npm cache directory
 .npm
 
-# Environment variables
+# Environment variables (secrets)
 .env
 
 node_modules
 
-# Config files
+# Personal config — kept in apollo_home_control-private (separate private repo)
+# Symlinked into config/ at runtime; not tracked in this repo.
 config/devices.json
 config/lights.json
 config/triggers.json
-
-# These don't contain any sensitive data so not bothering to exclude them.
-#config/deviceScenes.json
-#config/insteonKeypad.json
-#config/lightingScenes.json
-#config/macros.json
+config/deviceScenes.json
+config/insteonKeypad.json
+config/lightingScenes.json
+config/macros.json
 
 # Folder for notes not for sharing
 private
