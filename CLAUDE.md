@@ -43,15 +43,13 @@ Tracked as [GitHub Issues](https://github.com/raypp2/Apollo-Home-Control/issues)
 
 ## Personal deployment context
 
-This repo is paired with a private repo `Apollo-Home-Control-private` (cloned as a sibling directory) containing personal config files (devices, lights, scenes, macros, keypad bindings) and a deployment-specific context document. If you're working on deployment-related code, integrating with the live install, or troubleshooting the Pi, read:
+Auto-loaded from the sibling private repo when present:
 
-```
-../apollo-home-control-private/pi-deployment-context.md
-```
+@../apollo-home-control-private/pi-deployment-context.md
 
 That document covers the running deployment: host info, network topology, the Homebridge install pinned to 1.x for plugin compat, Uptime Kuma monitoring, the ESPSomfy bridge that blocks ICMP but accepts HTTP, etc. None of that is in this public repo.
 
-For code-only work (fixing a bug in a handler, adding an ecosystem driver), you can ignore the private repo entirely — Apollo runs locally just fine off the templates plus your own `.env`.
+For code-only work (fixing a bug in a handler, adding an ecosystem driver), you can ignore the private repo entirely — Apollo runs locally fine off the templates plus your own `.env`.
 
 ## Roadmap
 
