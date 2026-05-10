@@ -53,7 +53,7 @@ function alexaAC(debugId, curDevice, apiCommand, apiParam1) {
             }
 
             curExecute = curDevice.commands[curDirection]; // At least 1 command
-            for (i = 1; i < apiParam1; i++) {
+            for (let i = 1; i < apiParam1; i++) {
                 curExecute += "~" + curDevice.commands[curDirection]; // Add additional degrees
             }
 

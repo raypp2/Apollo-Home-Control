@@ -32,7 +32,7 @@ const { send_ip_command }                       // IP Devices
 
 function alexaSpeaker(debugId, curDevice, apiCommand, apiParam1, apiParam2) {
 
-    curExecute = false;
+    let curExecute = false;
     switch(apiCommand.toUpperCase()) {
 
         case 'SETVOLUME':

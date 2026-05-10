@@ -116,7 +116,7 @@ function spotifySwitchPlay(deviceName, context_uri, debug_id) {
                             var attempt_delay = transfer_attempts_delay[num];
                             console.log('%d - Spotify device not yet active', debug_id);
                             console.log('%d - Making attempt %s after a %s second delay.', debug_id, num + 2, (attempt_delay / 1000));
-                            setTimeout(() => transferAttempt(num + 1), attempt_delay);
+                            setTimeout(() => transferPlayback(num + 1), attempt_delay);
                         } else {
                             console.log('%d - Spotify API ERROR:', debug_id, err);
                         }

@@ -76,7 +76,7 @@ function insteon_setup_devices () {
 
   console.log("Setting up all devices.");
 
-  for(i = 0; i < lights_new.length; i++){
+  for(let i = 0; i < lights_new.length; i++){
     insteon_device_status_poll(i);
     insteon_status_listener(i);
   }
