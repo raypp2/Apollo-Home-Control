@@ -92,10 +92,12 @@ function handleRequest(request, response){
         
         case "LIGHTS":
             lighting_device_command(logging.operation_num, apiDevice, apiCommand);
+            if (typeof response != 'undefined') { response.end("Completed processing request."); }
             return;
 
         case "LIGHTINGSCENES":
             scene_command (logging.operation_num, apiDevice, apiCommand);
+            if (typeof response != 'undefined') { response.end("Completed processing request."); }
             return;
 
         case "MACROS":

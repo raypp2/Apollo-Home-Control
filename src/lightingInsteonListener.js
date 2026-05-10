@@ -46,6 +46,10 @@ var config = {
 
 function startListener(handleRequest) {
 
+    hub.on('error', function(err){
+        console.log('Insteon hub error: %s', err.message);
+    });
+
     hub.httpClient(config, function(){
     console.log('Insteon listener connected!');
 
@@ -59,7 +63,7 @@ function startListener(handleRequest) {
         if (typeof info.standard.id !== undefined) {
         isKeypadPress(info,handleRequest);
         }}}}
-    });  
+    });
 
     // insteon_setup_devices();  // Polls and creates listeners for devices to keep status updated on interfaces
     // holding until web interface is fixed.
