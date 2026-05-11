@@ -146,6 +146,44 @@ The `location` for each device comes from a new field in `lights.json` and `devi
 
 ---
 
+## Testing Strategy
+
+Each stage adds tests alongside the implementation. Apollo already has smoke tests (`test/smoke.js`) and ESLint; MQTT work extends this foundation.
+
+### Test levels:
+
+**Unit tests (per module):**
+- Each new `src/` module gets a corresponding `test/` file (e.g., `test/mqttClient.test.js`)
+- Test MQTT message parsing, topic construction, payload formatting, state mapping
+- Mock the MQTT client for unit tests — validate that the right topics and payloads are produced without needing a running broker
+- Test reconnection logic, error handling, edge cases (malformed messages, missing fields)
+
+**Integration tests (with Mosquitto):**
+- Require a running Mosquitto instance (local dev or CI)
+- Verify publish/subscribe round-trips: publish a state message, verify subscriber receives it
+- Test retained messages: subscribe after publish, verify last state is received
+- Test LWT: disconnect client ungracefully, verify offline message arrives
+- Test WebSocket connectivity (Stage 9): verify browser-style client can connect on port 9001
+
+**Smoke tests (existing pattern, extended):**
+- Extend `test/smoke.js` with MQTT-aware checks as stages are deployed:
+  - Stage 1: verify Apollo connects to Mosquitto and publishes bridge status
+  - Stage 2+: verify state topics are published when commands are sent via API
+  - Stage 9: verify `/list/*` endpoints still work (dashboard fallback path)
+
+**Manual validation (per stage):**
+- Each stage includes specific manual test steps (documented in the stage itself)
+- These cover physical device interaction that can't be automated (pressing a switch, unplugging a device)
+
+### Conventions:
+- Test files live in `test/` alongside existing `smoke.js`
+- Use Node's built-in `assert` module (no test framework dependency)
+- Tests run via `npm test` — update the test script to run all `test/*.test.js` files
+- Integration tests that need Mosquitto are skipped gracefully if the broker isn't available
+- Each stage PR should not be merged until its tests pass
+
+---
+
 ## Stage 1: Mosquitto Broker + MQTT Client in Apollo
 
 **What:** Install Mosquitto on the Pi, add an MQTT client to Apollo that connects at startup. No device integration yet — just the plumbing.
@@ -153,6 +191,7 @@ The `location` for each device comes from a new field in `lights.json` and `devi
 **Changes:**
 - Install Mosquitto on Pi (`apt install mosquitto mosquitto-clients`)
 - Configure Mosquitto for local-only access (listener on `localhost:1883` or LAN-only)
+- Enable WebSocket listener (`listener 9001`, `protocol websockets`) for browser MQTT clients
 - Add `mqtt` npm package to Apollo
 - Create `src/mqttClient.js`:
   - Connects to broker on startup
@@ -428,6 +467,43 @@ The `location` for each device comes from a new field in `lights.json` and `devi
 
 ---
 
+## Stage 9: Real-Time Dashboard via MQTT WebSocket
+
+**What:** Replace the dashboard's HTTP polling with direct MQTT subscriptions over WebSocket. The browser connects to Mosquitto as a first-class MQTT client and receives state updates in real-time.
+
+**Why this approach (browser → Mosquitto directly):** No relay code in Apollo. Mosquitto's WebSocket listener (configured in Stage 1) lets the browser subscribe to topics directly. Fits the local-only philosophy — Mosquitto is on the LAN, same as the dashboard.
+
+**Changes:**
+- Add `mqtt.min.js` (browser build of mqtt.js) to `public/js/`
+- Create `public/js/mqttDashboard.js`:
+  - Connect to `ws://<pi-host>:9001` on page load
+  - Subscribe to `apollo/#` for all state updates
+  - On message, find the matching device in the AngularJS `$scope.devices` array by device ID and update its state
+  - Call `$scope.$apply()` to trigger AngularJS re-render
+- Update `public/index.html`:
+  - Load `mqtt.min.js` and `mqttDashboard.js`
+  - Remove `$interval(fetchList, 5000, 10)` polling from the `LightingDevices` controller
+  - Keep the initial `$http.get('/list/...')` fetch — MQTT provides updates after load, not the initial device list
+- Add connection status indicator to the nav bar (green dot = connected, red = disconnected)
+- On MQTT disconnect, fall back to polling until reconnected
+
+**What updates in real-time:**
+- Light on/off state and brightness (toggle switches update without refresh)
+- Device online/offline status
+- Shade positions
+- Health status indicators (from Stage 8)
+
+**What doesn't change:**
+- Device list and config still comes from `/list/*` endpoints at page load
+- Command buttons still POST to `/api/*` (Apollo handles routing to the right protocol)
+- CSS, layout, and overall structure stay as-is — this is not the full dashboard refactor
+
+**Test:** Open dashboard in browser. Toggle a light via physical switch. Verify the dashboard switch updates within 1-2 seconds without page refresh. Disconnect Mosquitto. Verify fallback polling kicks in and connection indicator turns red. Reconnect. Verify WebSocket resumes.
+
+**Deployable independently:** Yes. The initial HTTP fetch still works as a fallback. MQTT updates are purely additive.
+
+---
+
 ## Stage Summary
 
 | Stage | What | Effort | Dependencies |
@@ -440,8 +516,9 @@ The `location` for each device comes from a new field in `lights.json` and `devi
 | 6 | Homebridge MQTT integration | Small-Medium | Stage 1 |
 | 7 | Alexa state via IoT Core (ReportState + ChangeReport) | Medium-Large | Stages 1-4 (needs state data) |
 | 8 | Health monitoring + self-diagnosis | Small-Medium | Stages 1-4 |
+| 9 | Real-time dashboard via MQTT WebSocket | Small-Medium | Stage 1 + at least one device stage |
 
-Stages 2-6 can be done in any order after Stage 1. Stage 7 benefits from having several ecosystems publishing state. Stage 8 can be added at any point after Stage 1.
+Stages 2-6 and 9 can be done in any order after Stage 1. Stage 7 benefits from having several ecosystems publishing state. Stage 8 can be added at any point after Stage 1. Stage 9 is most useful once a few device ecosystems are publishing state.
 
 ## Spotify
 
@@ -458,15 +535,15 @@ Apollo remains the core system. MQTT + IoT Core make it self-diagnosing, Alexa-a
 - Health monitoring infrastructure
 
 **Future possibilities (not planned, but enabled by this architecture):**
-- Dashboard rewrite consuming MQTT state via WebSocket
 - Remote access via IoT Core (subscribe to topics from anywhere)
 - Additional Alexa capabilities (color control, scenes as stateful)
 - Homebridge 2.0 + Matter (when plugin ecosystem matures)
 - Push notifications on device failures (Pushover, email)
+- Full dashboard redesign (Stage 9 adds real-time updates to the existing UI; a visual redesign is separate)
 
 ## Not in Scope
 
-- **Dashboard HTML refactor** — separate project, will consume MQTT state when ready
+- **Full dashboard redesign** — Stage 9 adds real-time state to the existing UI; a visual/UX overhaul is a separate project
 - **Alexa color control** — can be added when Apollo's Hue driver exposes color state via MQTT
 - **Homebridge 2.0 upgrade** — revisit when Matter plugin ecosystem matures
 - **Replacing SQS with IoT Core for commands** — SQS works, no reason to change
