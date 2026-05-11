@@ -167,14 +167,7 @@ The `location` for each device comes from a new field in `lights.json` and `devi
 
 ### Security
 
-Mosquitto is configured for LAN-only access (no internet-facing ports). MQTT on port 1883 and WebSocket on port 9001 are accessible to any device on the home network. This is an intentional tradeoff: authentication adds complexity and failure modes for a single-user system on a private network.
-
-**Accepted risk:** Any device on the LAN can subscribe to all state topics and publish commands. This is acceptable as long as the network does not include untrusted devices.
-
-**If the threat model changes** (guest WiFi shared with IoT network, adding untrusted cameras, etc.):
-- Add Mosquitto username/password authentication (`password_file`)
-- Add ACLs to restrict which clients can publish to `set` topics
-- Consider TLS for the MQTT and WebSocket listeners
+The Pi and IoT devices are isolated on separate VLANs, so Mosquitto is not exposed to untrusted devices. No authentication or ACLs needed — the network topology handles isolation. Mosquitto listens on port 1883 (MQTT) and 9001 (WebSocket) without credentials.
 
 IoT Core side is secured by X.509 certificates (only the Mosquitto bridge can connect) and IAM policies (Lambda permissions are scoped to specific shadows).
 
