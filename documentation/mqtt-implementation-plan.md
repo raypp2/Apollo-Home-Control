@@ -64,21 +64,31 @@ apollo/<location>/<ecosystem>/<device_id>/<attribute>
 |-------|--------|---------|
 | `location` | Room or zone from device config | `living-room`, `bedroom`, `kitchen`, `theater`, `office`, `outdoor` |
 | `ecosystem` | Protocol/platform | `insteon`, `hue`, `shelly`, `wled`, `somfy`, `dmx`, `itach`, `ip`, `spotify`, `homebridge` |
-| `device_id` | Device ID from config files | `kitchen`, `giantP`, `shades`, `bedroomProjector` |
-| `attribute` | State or control channel | `state`, `set`, `status`, `brightness`, `position` |
+| `device_id` | Descriptive name for the device | `light`, `dimmer`, `giantP`, `shades`, `projector` |
+| `attribute` | State or control channel | `state`, `set`, `status` |
+
+**Device ID naming rule:** The `device_id` should describe the device itself, not repeat the location. Use `light` not `kitchen` for the kitchen light; use `projector` not `theaterProjector` for the theater projector. The location is already in the topic path. If a room has multiple devices of the same type, differentiate them: `light-ceiling`, `light-table`.
 
 **Examples:**
 ```
-apollo/kitchen/insteon/kitchen/state          # Kitchen Insteon dimmer state
-apollo/living-room/hue/giantP/state           # Living room Hue light state
-apollo/bedroom/somfy/shades/state             # Bedroom shade position
-apollo/theater/itach/theaterProjector/status   # iTach connection health
+apollo/kitchen/insteon/light/state             # Kitchen Insteon dimmer
+apollo/living-room/hue/giantP/state            # Living room Hue light
+apollo/bedroom/somfy/shades/state              # Bedroom shade position
+apollo/theater/itach/projector/status           # iTach connection health
 apollo/bridge/apollo/status                    # Apollo bridge online/offline
 ```
 
+**Canonical topics only:** All consumers (dashboard, health monitor, IoT Core bridge) subscribe exclusively to `apollo/...` topics. Native MQTT devices (Shelly, WLED, ESPSomfy-RTS) are configured to publish directly on Apollo-convention topics via their web UIs — no translation layer needed. For devices that can't be reconfigured (unlikely), Apollo subscribes to the native topic and republishes on the canonical topic.
+
 ### Retained Messages
 
-All `state` topics use **retained messages** so that new subscribers (dashboard, health monitor, reconnecting clients) immediately get the last known state.
+All `state` topics use **retained messages** so that new subscribers (dashboard, health monitor, reconnecting clients) immediately get the last known state. When a device goes offline (LWT or staleness detection), Apollo publishes a retained state update with `"reachable": false` to the device's state topic so new subscribers don't see stale state without context.
+
+### QoS Levels
+
+- **State messages:** QoS 1 (at-least-once). State is idempotent — duplicates are harmless since the latest state always wins.
+- **Command messages (`set` topics):** QoS 1. Commands routed through Apollo are deduplicated by the handler (if the device is already in the desired state, the command is a no-op).
+- **IoT Core shadow deltas (Stage 10):** Shadow delta mechanism inherently deduplicates — the delta clears when reported state matches desired state, so a replayed delta against an already-converged shadow produces no action.
 
 ### State Payload Format
 
@@ -88,6 +98,7 @@ All state messages use JSON:
 {
   "power": "ON",
   "brightness": 80,
+  "reachable": true,
   "timestamp": 1715300000,
   "source": "event"
 }
@@ -99,13 +110,23 @@ All state messages use JSON:
 | `brightness` | `0-100` | No | Dimmer level (omit for non-dimmable) |
 | `position` | `0-100` | No | Shade position: 0=open, 100=closed |
 | `color` | `{"hue":0,"sat":100}` | No | Color (Hue lights, WLED, DMX) |
+| `reachable` | `true` / `false` | Yes | Whether the device is reachable. Set to `false` on LWT/staleness. |
 | `timestamp` | Unix epoch (seconds) | Yes | When this state was observed |
 | `source` | `"command"` / `"event"` / `"poll"` | Yes | How we know this state |
 
 `source` values:
-- `command` — Apollo sent a command and assumes the resulting state
+- `command` — Apollo sent a command and assumes the resulting state (optimistic — verified by follow-up poll)
 - `event` — device reported a state change (SSE, native MQTT, Insteon event)
 - `poll` — periodic device query confirmed this state
+
+### Optimistic State Verification
+
+When Apollo sends a command and publishes state with `source: "command"`, it is assuming the device obeyed. This assumption can be wrong (device offline, RF interference, IR missed). To prevent stale optimistic state from propagating to Alexa and the dashboard:
+
+- After publishing a `command`-source state, schedule a verification poll 3-5 seconds later
+- If the poll result disagrees with the optimistic state, publish a correction with `source: "poll"`
+- For fire-and-forget protocols (iTach IR), there is no verification possible — document these devices as "unverifiable" in the health monitor
+- Ecosystems with event feedback (Hue SSE, native MQTT devices) self-correct via the event stream — no poll needed
 
 ### Command Payload Format
 
@@ -144,6 +165,19 @@ The `location` for each device comes from a new field in `lights.json` and `devi
 }
 ```
 
+### Security
+
+Mosquitto is configured for LAN-only access (no internet-facing ports). MQTT on port 1883 and WebSocket on port 9001 are accessible to any device on the home network. This is an intentional tradeoff: authentication adds complexity and failure modes for a single-user system on a private network.
+
+**Accepted risk:** Any device on the LAN can subscribe to all state topics and publish commands. This is acceptable as long as the network does not include untrusted devices.
+
+**If the threat model changes** (guest WiFi shared with IoT network, adding untrusted cameras, etc.):
+- Add Mosquitto username/password authentication (`password_file`)
+- Add ACLs to restrict which clients can publish to `set` topics
+- Consider TLS for the MQTT and WebSocket listeners
+
+IoT Core side is secured by X.509 certificates (only the Mosquitto bridge can connect) and IAM policies (Lambda permissions are scoped to specific shadows).
+
 ---
 
 ## Testing Strategy
@@ -170,6 +204,12 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
   - Stage 1: verify Apollo connects to Mosquitto and publishes bridge status
   - Stage 2+: verify state topics are published when commands are sent via API
   - Stage 9: verify `/list/*` endpoints still work (dashboard fallback path)
+
+**End-to-end Alexa path test (Stage 7):**
+- The most critical path spans Apollo → Mosquitto → IoT Core → Lambda → Alexa Event Gateway
+- Automate everything up to the Event Gateway: publish a state change locally, verify the IoT Core shadow updates, verify the ChangeReport Lambda fires with the correct payload
+- Mock the Alexa Event Gateway call in the Lambda test to verify the ChangeReport format
+- The final hop (Event Gateway → Echo Show) is manual — verify visually that the Echo Show updates
 
 **Manual validation (per stage):**
 - Each stage includes specific manual test steps (documented in the stage itself)
@@ -215,21 +255,22 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
 
 ### Shelly
 - Enable MQTT in Shelly web UI, point to Mosquitto broker
-- Topics: `shellies/<model>-<id>/relay/0` (state), `shellies/<model>-<id>/relay/0/command` (set)
-- In `src/lightingShelly.js`, subscribe and translate to Apollo topic convention
+- Configure custom topic prefix in Shelly settings to publish directly on Apollo convention topics (e.g., `apollo/kitchen/shelly/light`)
+- Shelly Gen2+ devices support custom MQTT topic prefixes natively
+- In `src/lightingShelly.js`, subscribe to Apollo-convention topics — no translation needed
 
 ### WLED
 - Enable MQTT in WLED settings, point to Mosquitto broker
-- Topics: `wled/<id>/v` (state JSON), `wled/<id>/api` (commands)
-- In `src/lightingWled.js`, subscribe and translate
+- Configure WLED's "Device Topic" to follow Apollo convention (e.g., `apollo/theater/wled/strips`)
+- WLED publishes state and accepts commands on the configured topic
+- In `src/lightingWled.js`, subscribe to Apollo-convention topics — no translation needed
 
 ### ESPSomfy-RTS
 - Enable MQTT in ESPSomfy-RTS Network settings (web UI)
-- Set root topic (e.g., `espsomfy`)
-- Topics published: `espsomfy/shades/<id>/position` (0-100), `espsomfy/shades/<id>/direction` (-1/0/1), `espsomfy/shades/<id>/name`, `espsomfy/shades/<id>/tiltPosition`
-- Topics subscribed: `espsomfy/shades/<id>/direction/set`, `espsomfy/shades/<id>/target/set` (0-100%)
-- Also publishes `status` (online/offline via LWT), firmware, IP address
-- In `src/somfyBridge.js`, subscribe and translate. Can optionally switch commands from HTTP to MQTT.
+- Set root topic to follow Apollo convention (e.g., `apollo/bedroom/somfy`)
+- ESPSomfy publishes shade position, direction, tilt on subtopics and accepts set commands
+- Also publishes LWT status (online/offline), firmware, IP address
+- In `src/somfyBridge.js`, subscribe to Apollo-convention topics. Can switch commands from HTTP to MQTT.
 
 ### DMX Bridge
 - Update DMX bridge firmware to publish fixture state and subscribe to commands via MQTT
@@ -307,6 +348,8 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
 
 **Test:** Send two rapid commands to the same iTach unit — verify no race condition. Disconnect an iTach from the network — verify Apollo logs the error and reconnects when it comes back. Query projector power state via serial.
 
+**Rollback:** Keep the connect-per-command code path behind a config flag (`ITACH_PERSISTENT_CONNECTIONS=true`) during transition. If persistent connections cause issues, flip the flag to revert to the old behavior without a code deploy.
+
 **Deployable independently:** Yes, but this is a refactor — test thoroughly before deploying.
 
 ---
@@ -379,16 +422,21 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
   - Certificates stored in `/etc/mosquitto/certs/`
 
 ### Changes — AWS IoT Core:
-- Create IoT "thing" for the Mosquitto bridge (one thing, not per-device)
-- Generate X.509 certificate pair and attach to the thing
-- IoT policy: allow publish/subscribe on `apollo/#` topics
-- Create a **Named Shadow** per Alexa endpoint (e.g., shadow name = endpoint ID)
-- IoT Rule: on shadow update, invoke the ChangeReport Lambda
-  - SQL: `SELECT * FROM '$aws/things/apollo-bridge/shadow/name/+/update/accepted'`
+- Create one IoT **Thing per Alexa endpoint** (e.g., `apollo-kitchen-light`, `apollo-living-room-giantP`)
+  - Each thing gets a classic (unnamed) shadow for its device state
+  - This avoids the Named Shadow per-thing limit (25 default, requires support ticket to raise)
+  - Things are provisioned via AWS CLI — Claude can script bulk creation from the device config files
+- Create one IoT "thing" for the Mosquitto bridge itself (`apollo-bridge`) — used for authentication
+- Generate X.509 certificate pair, attach to the bridge thing
+- IoT policy: allow the bridge to publish/subscribe on `apollo/#` and `$aws/things/apollo-*/shadow/#` topics
+- Topic mapping: Mosquitto bridge maps local state topics to per-device shadow update topics
+  - `apollo/<location>/<ecosystem>/<device>/state` → `$aws/things/apollo-<device>/shadow/update` (reported state)
+- IoT Rule: on any device shadow update, invoke the ChangeReport Lambda
+  - SQL: `SELECT * FROM '$aws/things/apollo-+/shadow/update/accepted'`
 
 ### Changes — Alexa Lambda side ([Apollo-Alexa-Skill](https://github.com/raypp2/Apollo-Alexa-Skill)):
 - Add `Alexa.ReportState` directive handler:
-  - Read device shadow from IoT Core (`GetThingShadow`)
+  - Read device shadow from IoT Core (`GetThingShadow` for `apollo-<endpointId>`)
   - Return `StateReport` with properties:
     - `Alexa.PowerController.powerState` (all devices)
     - `Alexa.BrightnessController.brightness` (dimmable lights)
@@ -428,6 +476,12 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
 
 **Note:** Color control (`Alexa.ColorController`) can be added when Apollo's Hue driver exposes color state via MQTT.
 
+### Bridge monitoring:
+- Mosquitto bridge publishes connection status to `apollo/bridge/iot-core/status` (online/offline)
+- Set up CloudWatch alarm on IoT Core: alert if no messages received in 10 minutes
+- Certificate expiry: IoT Core certificates are valid for years, but add a calendar reminder and a health check that logs days-until-expiry on Apollo startup
+- If the bridge drops, Alexa state goes stale but local MQTT and all device control continue working — the bridge is not in the critical path for commands (until Stage 10)
+
 ### IoT Core cost estimate:
 - ~5,000 messages/day (state updates from all devices) = ~150K messages/month
 - IoT Core pricing: $1.00 per million messages
@@ -453,9 +507,14 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
   - On boot, ping/query each device ecosystem
   - Publish `apollo/health/startup` with a summary of reachable/unreachable devices
 - Publish health summary to `apollo/health/summary` periodically (every 5 min)
+- Monitor infrastructure health (not just devices):
+  - Mosquitto broker connection (`apollo/bridge/apollo/status`)
+  - IoT Core bridge connection (`apollo/bridge/iot-core/status`, from Stage 7)
+  - IoT Core certificate expiry — log days-until-expiry on startup, warn at 30 days
 - Integrate with Uptime Kuma:
   - Push health status via Uptime Kuma's push monitor API
   - Or expose a `/api/health` endpoint that Uptime Kuma polls
+  - Include bridge health in the Uptime Kuma checks
 
 **Future (not this plan):**
 - Push notifications on failure (email, Pushover, or Uptime Kuma webhook)
@@ -531,9 +590,11 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
 - Remove SQS queue from AWS (after validation period)
 - Update `.env` — remove SQS config, IoT Core endpoint already configured from Stage 7
 
-**Migration approach:** Run both paths in parallel first. Apollo listens to both SQS and shadow deltas. Verify commands work via IoT Core. Then remove SQS.
+**Migration approach:** Run both paths in parallel for at least 2 weeks. Apollo listens to both SQS and shadow deltas, with logging to compare which path delivers each command. After confirming IoT Core path is reliable and within latency threshold, disable SQS in the Lambda. Keep the SQS queue alive for another week as a safety net before deletion.
 
-**Test:** Send Alexa command → verify it arrives via IoT Core shadow delta (not SQS). Verify response time is comparable. Verify shadow desired/reported converge after command execution.
+**Latency threshold:** SQS long-polling delivers commands in ~1s. The IoT Core path adds network hops (Lambda → IoT Core → Mosquitto bridge → Apollo). Acceptable command latency is **under 2 seconds** end-to-end. If the IoT Core path consistently exceeds this (measure during the parallel period), investigate before committing to the migration. Light switch delays above 2s are noticeable and frustrating.
+
+**Test:** Send Alexa command → verify it arrives via IoT Core shadow delta (not SQS). Measure end-to-end latency across 50+ commands. Verify shadow desired/reported converge after command execution. Verify no duplicate command execution during parallel running.
 
 **Deployable independently:** Yes, with parallel running period. SQS removal is a separate step after validation.
 
@@ -566,7 +627,9 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
 
 **Test:** All device types render correctly. Toggle, brightness, and shade controls work. Real-time updates reflect within 1-2 seconds. Mobile layout is usable on phone-sized screens. Fallback to polling works when MQTT disconnects.
 
-**Deployable independently:** Yes. Old dashboard can be preserved at a different path during transition.
+**Needs sub-plan before implementation:** This is the largest stage and the most prone to scope creep. Before starting, create a detailed design document covering: framework choice (with a prototype), component structure, how `/list/*` API responses map to the new UI, room layout mockups, and mobile breakpoints. The current plan captures design goals but not implementation specifics.
+
+**Deployable independently:** Yes. Old dashboard can be preserved at `/legacy` during transition.
 
 ---
 
@@ -645,9 +708,9 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
 - Stage 12 requires Stages 4 and 7
 - Stage 13 should wait until Homebridge 2.0 Matter plugins are confirmed compatible
 
-## Spotify
+## Spotify (part of Stage 9)
 
-Not part of the staged MQTT rollout. Spotify state (`getMyCurrentPlaybackState()`) will be polled on a timer and published to `apollo/home/spotify/<device_id>/state` for the dashboard "now playing" feature. Can be added at any stage after Stage 1. Dashboard redesign (Stage 11) will include a "now playing" card.
+Spotify state publishing is bundled with Stage 9 (dashboard WebSocket updates) since it's small and the dashboard is its primary consumer. Poll `getMyCurrentPlaybackState()` on a 10-second timer and publish to `apollo/home/spotify/player/state` with a payload including track name, artist, album art URL, playback state, and device name. The dashboard (Stage 9 or 11) renders a "now playing" card from this topic.
 
 ## Long-Term Architecture
 
