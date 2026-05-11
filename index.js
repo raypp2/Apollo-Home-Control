@@ -80,3 +80,12 @@ sqsListener.startListener();
 // Start Insteon Listener for KeyPad Presses
 const insteonListener = require('./src/lightingInsteonListener');
 insteonListener.startListener(handleRequest);
+
+// Catch unhandled errors to prevent a single ecosystem failure from crashing the entire bridge
+process.on('uncaughtException', function(err) {
+    console.log('Uncaught exception: %s', err.message);
+});
+
+process.on('unhandledRejection', function(reason) {
+    console.log('Unhandled rejection: %s', reason);
+});

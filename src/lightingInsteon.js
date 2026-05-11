@@ -144,7 +144,7 @@ function insteon_send_command (operation_num, command){
 
     console.log("%d - Sending Command: %s", operation_num, command['path']);
 
-    http.request(command, function(response) {
+    var req = http.request(command, function(response) {
       var str = '';
 
       response.on('data', function (chunk) {
@@ -155,7 +155,13 @@ function insteon_send_command (operation_num, command){
         // Add error handling for no response
         // console.log(str);
       });
-    }).end();
+    });
+
+    req.on('error', function(err) {
+      console.log("%d - Insteon command error: %s", operation_num, err.message);
+    });
+
+    req.end();
 
 }
 

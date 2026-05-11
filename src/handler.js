@@ -68,8 +68,8 @@ function handleRequest(request, response){
     const apiParam2     = api[5] ? api[5].toUpperCase() : false;
 
     if(!apiModule || !apiDevice) {
-        //response.status(404).send("ERROR: You must specify a valid API command -- /api/module/device/command/param1/param2");
         console.log("ERROR: You must specify a valid API command -- /api/module/device/command/param1/param2");
+        if (typeof response != 'undefined') { response.status(400).send("ERROR: You must specify a valid API command."); }
         return;
     }
 
@@ -92,10 +92,12 @@ function handleRequest(request, response){
         
         case "LIGHTS":
             lighting_device_command(logging.operation_num, apiDevice, apiCommand);
+            if (typeof response != 'undefined') { response.end("Completed processing request."); }
             return;
 
         case "LIGHTINGSCENES":
             scene_command (logging.operation_num, apiDevice, apiCommand);
+            if (typeof response != 'undefined') { response.end("Completed processing request."); }
             return;
 
         case "MACROS":
@@ -117,8 +119,7 @@ function handleRequest(request, response){
 
         default:
             console.log("%d - Error: Module not valid", logging.operation_num);
-            // TODO: Setup promises to return error to browser
-            // response.status(404).send("ERROR: You must specify a valid module -- devices, deviceScenes, lights, lightingScenes, or macros.")
+            if (typeof response != 'undefined') { response.status(404).send("ERROR: Module not valid."); }
     }
 
 }
@@ -142,7 +143,7 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
     let curDevice = extractDevice(apiDevice);
     if(!curDevice) {
         console.log("%d - Device not found", debugId);
-        // response.status(404).send("ERROR: Device not found.")
+        if (typeof response != 'undefined') { response.end("Completed processing request."); }
         return;
     }
 
@@ -150,7 +151,7 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
     let curExecute = extractCommand(curDevice, apiCommand);
     if(!curExecute) {
         console.log("%d - Command not found", debugId);
-        // response.status(404).send("ERROR: Command not found.")
+        if (typeof response != 'undefined') { response.end("Completed processing request."); }
         return;
     }
     
@@ -331,6 +332,9 @@ function handleDeviceScene(debugId, apiDevice, apiCommand, response) {
         insteon_button_blink(debugId++,curDeviceScene.blinkButton);
     }
     */
+
+    // Respond with something to kill connection
+    if (typeof response != 'undefined') { response.end("Completed processing request."); }
 }
 
 

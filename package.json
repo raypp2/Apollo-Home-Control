@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "test": "node test/smoke.js",
+    "lint": "eslint src/ index.js"
+  },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.427.0",
     "axios": "^1.5.1",
@@ -10,5 +14,9 @@
     "json5": "^2.2.3",
     "node-hue-api": "^5.0.0-beta.16",
     "spotify-web-api-node": "^5.0.2"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.4",
+    "globals": "^17.6.0"
   }
 }
