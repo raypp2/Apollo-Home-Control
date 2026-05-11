@@ -4,7 +4,7 @@
 
 Single-process Node.js home control bridge. Routes commands from Alexa (via AWS SQS), a local API, and Insteon KeyPad button presses to physical devices over the network: Insteon, Philips Hue, GlobalCache iTach (IR / serial / contact-closure), ESPSomfy-RTS, Shelly, WLED, DMX, Spotify, Apple Find-My, plus Homebridge as a separate service for HomeKit door buzzer.
 
-Single-owner, single-install. No tests, no CI, deployed by rsync.
+Single-owner, single-install. Deployed by rsync to Raspberry Pi 5.
 
 ## Codebase shape
 
@@ -30,6 +30,27 @@ Single-owner, single-install. No tests, no CI, deployed by rsync.
 - Start (prod): `pm2 start ecosystem.config.js`.
 - Required config: copy each `config/*.json.example` to `config/*.json` and edit, plus `.env` from `sample.env`.
 
+## Quality tools
+
+- **Lint:** `npm run lint` — ESLint v9 flat config. Error rules for dangerous patterns (no-undef, no-unreachable), warn rules for gradual cleanup (no-var, prefer-const, eqeqeq).
+- **Tests:** `npm test` — 16 smoke tests covering `/list` endpoints, `/api` endpoints, edge cases, and static UI.
+- **Claude Code hook:** `.claude/settings.json` runs `npm run lint` automatically after every file edit.
+
+## Deploying
+
+Deploy to the Pi from the Mac:
+
+```bash
+# Full unattended deploy (sync + npm ci + restart + verify):
+bash private/update-pi.sh --deploy
+
+# Or step by step:
+bash private/update-pi.sh -y          # sync only, skip confirmation
+bash private/update-pi.sh -y --restart  # sync + restart (no npm ci)
+```
+
+Only use `--install` (npm ci) when `package-lock.json` has changed. The script excludes `.git/`, `.env`, `node_modules/`, `documentation/`, `.claude/`, and `private/` from the rsync.
+
 ## Coding patterns to know
 
 - **JSON5 config files** — `config/*.json` are parsed with the `json5` library so they may contain comments and trailing commas. Don't switch them to strict JSON without checking how Apollo loads them.
@@ -51,6 +72,10 @@ That document covers the running deployment: host info, network topology, the Ho
 
 For code-only work (fixing a bug in a handler, adding an ecosystem driver), you can ignore the private repo entirely — Apollo runs locally fine off the templates plus your own `.env`.
 
+## MQTT implementation plan
+
+`documentation/mqtt-implementation-plan.md` — 13-stage plan for adding MQTT as a unified state and command bus, IoT Core for Alexa, health monitoring, dashboard redesign, and more. Tracked as [GitHub milestones and issues](https://github.com/raypp2/Apollo-Home-Control/milestones) and a [GitHub Project](https://github.com/users/raypp2/projects/1).
+
 ## Roadmap
 
-`documentation/roadmap.md` — bigger-picture wishlist. Older than `TODO.md`; some items are out of date (PM2 monitor setup is done, BeagleBone references are obsolete since the BeagleBone was decommissioned in May 2026 and Apollo now runs on a Raspberry Pi 5).
+`documentation/roadmap.md` — remaining wishlist items not covered by the MQTT plan.
