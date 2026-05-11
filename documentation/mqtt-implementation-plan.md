@@ -46,7 +46,7 @@ Add a unified MQTT state and command bus to Apollo so that:
 
 **Why IoT Core for Alexa:** IoT Core Device Shadows provide the full Alexa integration — both ReportState (Alexa queries device state) and proactive ChangeReports (Echo Shows update in real-time when a physical switch is toggled). Mosquitto's built-in bridge forwards local state topics to IoT Core, which triggers a Lambda to push ChangeReports to the Alexa Event Gateway. Cost is pennies/month at home automation volumes.
 
-**Why keep SQS for commands:** SQS works reliably for command delivery from Alexa and costs nothing. IoT Core shadow "desired state" could replace it eventually, but there's no urgency — SQS is proven and simple.
+**SQS → IoT Core for commands (Stage 10):** SQS currently handles Alexa commands reliably. Once IoT Core is wired up for state (Stage 7), commands can migrate to the shadow "desired state" pattern — collapsing both directions into one system and eliminating SQS entirely.
 
 ---
 
@@ -504,6 +504,120 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
 
 ---
 
+## Stage 10: Migrate Alexa Commands from SQS to IoT Core
+
+**What:** Replace SQS command polling with IoT Core Device Shadow "desired state" updates. Alexa commands flow through the same IoT Core infrastructure as state reporting, eliminating SQS entirely.
+
+**How it works now (SQS):**
+1. Alexa → Lambda writes command to SQS queue
+2. Apollo polls SQS every 1s → receives command → executes
+
+**How it works after (IoT Core):**
+1. Alexa → Lambda writes `{"desired": {"power": "ON"}}` to the device's shadow
+2. IoT Core sends shadow delta to Mosquitto via the bridge (already configured in Stage 7)
+3. Apollo receives the delta as an MQTT message on `$aws/things/apollo-bridge/shadow/name/<device>/update/delta`
+4. Apollo executes the command and updates the shadow "reported" state
+5. Shadow desired/reported converge — command complete
+
+**Changes:**
+- Create `src/mqttCommandListener.js`:
+  - Subscribe to shadow delta topics for all Alexa endpoints
+  - Parse desired state changes and route to the existing `handleRequest` in `handler.js`
+  - After execution, publish updated reported state to clear the delta
+- Update Alexa Lambda:
+  - Replace SQS `SendMessage` with IoT Core `UpdateThingShadow` (set desired state)
+  - Same IAM role, add `iot:UpdateThingShadow` permission
+- Remove `src/sqsListener.js` and SQS dependencies from Apollo
+- Remove SQS queue from AWS (after validation period)
+- Update `.env` — remove SQS config, IoT Core endpoint already configured from Stage 7
+
+**Migration approach:** Run both paths in parallel first. Apollo listens to both SQS and shadow deltas. Verify commands work via IoT Core. Then remove SQS.
+
+**Test:** Send Alexa command → verify it arrives via IoT Core shadow delta (not SQS). Verify response time is comparable. Verify shadow desired/reported converge after command execution.
+
+**Deployable independently:** Yes, with parallel running period. SQS removal is a separate step after validation.
+
+---
+
+## Stage 11: Dashboard Redesign
+
+**What:** Full redesign of the web dashboard. Replace the AngularJS 1.x UI with a modern, mobile-friendly interface that takes full advantage of real-time MQTT state (from Stage 9).
+
+**Why now:** The current dashboard was built as a quick utility but has become the primary control interface. It uses AngularJS 1.x (EOL), has no mobile layout, no room-based grouping, and no visual state feedback beyond toggle switches.
+
+**Design goals:**
+- Mobile-first responsive layout (used from phones as much as desktop)
+- Room-based device grouping (leveraging the `location` field from MQTT topics)
+- Visual state feedback: brightness sliders, shade position indicators, color previews
+- Device health indicators (online/offline/stale from Stage 8)
+- Connection status (MQTT WebSocket health)
+- Spotify "now playing" card
+- Fast — no heavy framework, vanilla JS or lightweight framework (Preact, Alpine.js, or similar)
+
+**Changes:**
+- Replace AngularJS with a lightweight alternative
+- New layout: room cards with grouped devices, collapsible sections
+- Real-time updates via MQTT WebSocket (already wired from Stage 9)
+- Brightness sliders that publish to `apollo/<location>/<ecosystem>/<device>/set`
+- Shade position controls
+- Health dashboard section showing device status summary
+- Keep the existing `/api/*` endpoints for commands — the new UI still POSTs to Apollo
+- Retain `/list/*` endpoints for initial device list loading
+
+**Test:** All device types render correctly. Toggle, brightness, and shade controls work. Real-time updates reflect within 1-2 seconds. Mobile layout is usable on phone-sized screens. Fallback to polling works when MQTT disconnects.
+
+**Deployable independently:** Yes. Old dashboard can be preserved at a different path during transition.
+
+---
+
+## Stage 12: Alexa Color Control
+
+**What:** Add `Alexa.ColorController` support so Alexa can set and report color for Hue lights, WLED, and DMX fixtures.
+
+**Dependencies:** Stage 4 (Hue SSE — need color state from the bridge), Stage 7 (IoT Core — need shadows to include color).
+
+**Changes:**
+- Extend MQTT state payload with color fields (already defined in conventions: `"color": {"hue":0,"sat":100}`)
+- In `src/lightingPhilipsHue.js`: include color in state publishing and accept color commands
+- In `src/lightingWled.js`: map WLED color state to/from Alexa color format
+- In `src/lightingDmx.js`: map DMX RGB channels to Alexa color format
+- Update IoT Core shadows to include color properties
+- Update Alexa Lambda:
+  - Add `Alexa.ColorController` to discovery for color-capable devices
+  - Handle `SetColor` directive — write desired color to shadow
+  - Include color in ReportState and ChangeReport responses
+- Update dashboard (Stage 11) with color picker controls
+
+**Test:** "Alexa, set the living room light to blue" → verify Hue light changes color. Check Echo Show displays correct color. Change color via Hue app → verify Alexa and dashboard update.
+
+**Deployable independently:** Yes. Additive to existing power/brightness controls.
+
+---
+
+## Stage 13: Homebridge 2.0 + Matter
+
+**What:** Upgrade Homebridge from 1.x to 2.0 and enable Matter bridge functionality, exposing Apollo-controlled devices natively to Apple Home, and potentially to Alexa and Google Home via Matter.
+
+**Why:** Matter is the emerging standard for smart home interoperability. Homebridge 2.0's Matter bridge means Apollo devices can appear in Apple Home (and other Matter-compatible ecosystems) without custom plugins per platform.
+
+**Dependencies:** Stage 6 (Homebridge MQTT integration — ensures MQTT plumbing is already working).
+
+**Changes:**
+- Upgrade Homebridge 1.x → 2.0 on the Pi
+  - Verify existing plugins are compatible (check homebridge-mqttthing Matter support)
+  - If homebridge-mqttthing doesn't support Matter yet, use Homebridge 2.0's built-in MQTT bridge if available, or wait for plugin updates
+- Configure Matter bridge in Homebridge 2.0
+- Pair Homebridge as a Matter bridge with Apple Home
+- Test: devices appear in Apple Home via Matter, state syncs via MQTT
+
+**Risk:** Homebridge 2.0 and Matter plugin ecosystem may not be fully mature. This stage should be attempted only when plugin compatibility is confirmed. The existing Homebridge 1.x + mqttthing setup (Stage 6) remains the fallback.
+
+**Test:** Open Apple Home. Verify Apollo devices appear as Matter accessories. Toggle a light from Apple Home → verify MQTT state updates. Toggle from Apollo → verify Apple Home reflects the change.
+
+**Deployable independently:** Yes, but with rollback plan to Homebridge 1.x if compatibility issues arise.
+
+---
+
 ## Stage Summary
 
 | Stage | What | Effort | Dependencies |
@@ -517,33 +631,43 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
 | 7 | Alexa state via IoT Core (ReportState + ChangeReport) | Medium-Large | Stages 1-4 (needs state data) |
 | 8 | Health monitoring + self-diagnosis | Small-Medium | Stages 1-4 |
 | 9 | Real-time dashboard via MQTT WebSocket | Small-Medium | Stage 1 + at least one device stage |
+| 10 | Migrate Alexa commands SQS → IoT Core | Medium | Stage 7 |
+| 11 | Dashboard redesign | Medium-Large | Stage 9 |
+| 12 | Alexa color control | Medium | Stages 4, 7 |
+| 13 | Homebridge 2.0 + Matter | Small-Medium | Stage 6 |
 
-Stages 2-6 and 9 can be done in any order after Stage 1. Stage 7 benefits from having several ecosystems publishing state. Stage 8 can be added at any point after Stage 1. Stage 9 is most useful once a few device ecosystems are publishing state.
+**Ordering flexibility:**
+- Stages 2-6 and 9 can be done in any order after Stage 1
+- Stage 7 benefits from having several ecosystems publishing state
+- Stage 8 can start after Stage 1, improves with more device stages
+- Stage 10 requires Stage 7 (IoT Core must be running)
+- Stage 11 can start after Stage 9 but benefits from Stages 8 and 12
+- Stage 12 requires Stages 4 and 7
+- Stage 13 should wait until Homebridge 2.0 Matter plugins are confirmed compatible
 
 ## Spotify
 
-Not part of the staged MQTT rollout. Spotify state (`getMyCurrentPlaybackState()`) will be polled on a timer and published to `apollo/home/spotify/<device_id>/state` for the dashboard "now playing" feature. Can be added at any stage after Stage 1.
+Not part of the staged MQTT rollout. Spotify state (`getMyCurrentPlaybackState()`) will be polled on a timer and published to `apollo/home/spotify/<device_id>/state` for the dashboard "now playing" feature. Can be added at any stage after Stage 1. Dashboard redesign (Stage 11) will include a "now playing" card.
 
 ## Long-Term Architecture
 
 Apollo remains the core system. MQTT + IoT Core make it self-diagnosing, Alexa-accurate, and maintainable with AI-assisted development (Claude Code). No migration to Home Assistant or other platforms planned.
 
-**Durable investments (will last):**
+**Durable investments:**
 - Mosquitto broker + MQTT topic conventions
 - Native MQTT device configurations (Shelly, WLED, ESPSomfy-RTS, DMX)
-- IoT Core Device Shadows + Alexa integration
+- IoT Core Device Shadows + Alexa integration (state and commands)
 - Health monitoring infrastructure
+- Modern dashboard consuming MQTT state
 
 **Future possibilities (not planned, but enabled by this architecture):**
 - Remote access via IoT Core (subscribe to topics from anywhere)
-- Additional Alexa capabilities (color control, scenes as stateful)
-- Homebridge 2.0 + Matter (when plugin ecosystem matures)
 - Push notifications on device failures (Pushover, email)
-- Full dashboard redesign (Stage 9 adds real-time updates to the existing UI; a visual redesign is separate)
+- Additional Alexa capabilities (scenes as stateful, thermostat modes)
+- Voice-triggered automations via Alexa routines backed by MQTT
 
 ## Not in Scope
 
-- **Full dashboard redesign** — Stage 9 adds real-time state to the existing UI; a visual/UX overhaul is a separate project
-- **Alexa color control** — can be added when Apollo's Hue driver exposes color state via MQTT
-- **Homebridge 2.0 upgrade** — revisit when Matter plugin ecosystem matures
-- **Replacing SQS with IoT Core for commands** — SQS works, no reason to change
+- **Home Assistant migration** — Apollo is the long-term system
+- **Cloud MQTT broker** — Mosquitto stays local; IoT Core handles only the Alexa bridge
+- **Google Home integration** — may come for free via Matter (Stage 13), otherwise not planned
