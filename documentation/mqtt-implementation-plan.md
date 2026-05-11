@@ -5,41 +5,47 @@
 Add a unified MQTT state and command bus to Apollo so that:
 1. Every device ecosystem publishes its current state
 2. Apollo can detect when devices stop responding
-3. Alexa can query and display accurate device state via ReportState and proactive ChangeReports
+3. Alexa can query and display accurate device state via ReportState
 4. The system self-diagnoses failures instead of waiting for the user to notice
 
 ## Architecture
 
 ```
-          ┌─────────────────────────────────────┐
-          │         Alexa Smart Home            │
-          │  ReportState ◄── IoT Shadow read    │
-          │  ChangeReport ◄── IoT Rule trigger  │
-          │  Directives ──► IoT Shadow desired  │
-          └──────────────────┬──────────────────┘
-                             │
-                    ┌────────▼────────┐
-                    │  AWS IoT Core   │
-                    │  Device Shadows │
-                    └────────┬────────┘
-                             │ MQTT (TLS)
-                             │
-┌──────────────┐    ┌────────▼────────┐    ┌──────────────┐
-│  Mosquitto   │◄──►│     Apollo      │───►│ Uptime Kuma  │
-│  (local)     │    │   (index.js)    │    │ (monitoring) │
-└──────┬───────┘    └────────┬────────┘    └──────────────┘
-       │                     │
-       │ native MQTT    commands via
-       │                HTTP/TCP/serial
-       │                     │
-  ┌────▼─────────┐   ┌──────▼──────────┐
-  │ Shelly, WLED │   │ Insteon, Hue,   │
-  │ ESPSomfy-RTS │   │ iTach, TCP/IP   │
-  │ DMX Bridge   │   │                 │
-  └──────────────┘   └─────────────────┘
+          ┌───────────────────────────────┐
+          │       Alexa Smart Home        │
+          │  ReportState ◄── DynamoDB     │
+          │  Directives ──► SQS (current) │
+          └──────────────┬────────────────┘
+                         │
+                ┌────────▼────────┐
+                │    DynamoDB     │
+                │  (state cache)  │
+                └────────▲────────┘
+                         │ write on
+                         │ state change
+┌──────────────┐ ┌───────┴─────────┐ ┌──────────────┐
+│  Mosquitto   │◄►│     Apollo      │─►│ Uptime Kuma  │
+│  (local)     │ │   (index.js)    │ │ (monitoring) │
+└──────┬───────┘ └───────┬─────────┘ └──────────────┘
+       │                 │
+       │ native MQTT   commands via
+       │               HTTP/TCP/serial
+       │                 │
+  ┌────▼─────────┐ ┌─────▼───────────┐
+  │ Shelly, WLED │ │ Insteon, Hue,   │
+  │ ESPSomfy-RTS │ │ iTach, TCP/IP   │
+  │ DMX Bridge   │ │                 │
+  └──────────────┘ └─────────────────┘
+
+  ┌──────────────┐
+  │  Homebridge  │◄── MQTT (via homebridge-mqttthing)
+  │  (HomeKit)   │
+  └──────────────┘
 ```
 
-Apollo connects to **two MQTT brokers**: Mosquitto (local, for device communication) and AWS IoT Core (cloud, for Alexa integration). All local device topics flow through Mosquitto. Apollo bridges relevant state to IoT Core shadows.
+**Why DynamoDB over IoT Core for Alexa:** IoT Core Device Shadows are the "proper" AWS architecture, but they're heavyweight infrastructure that becomes throwaway when migrating to Home Assistant. DynamoDB is simpler (Apollo already has AWS credentials for SQS), costs $0 (free tier), and the Lambda just reads a row for ReportState. The end-state Alexa integration is Home Assistant + Nabu Casa (~$7.50/month), which eliminates the custom skill, Lambda, SQS, and all AWS infrastructure entirely.
+
+**Why keep SQS for now:** SQS works reliably for command delivery and costs nothing. Replacing it with IoT Core shadow desired-state changes adds complexity for no benefit during the transition period. When HA + Nabu Casa takes over, SQS goes away naturally.
 
 ---
 
@@ -51,12 +57,12 @@ Apollo connects to **two MQTT brokers**: Mosquitto (local, for device communicat
 apollo/<location>/<ecosystem>/<device_id>/<attribute>
 ```
 
-**Why location first:** Groups devices by physical space for easier monitoring, dashboard views, and automation rules. A location-first hierarchy means subscribing to `apollo/living-room/#` gives you everything in that room regardless of ecosystem.
+**Why location first:** Groups devices by physical space for easier monitoring, dashboard views, and automation rules. Subscribing to `apollo/living-room/#` gives you everything in that room regardless of ecosystem.
 
 | Level | Values | Examples |
 |-------|--------|---------|
 | `location` | Room or zone from device config | `living-room`, `bedroom`, `kitchen`, `theater`, `office`, `outdoor` |
-| `ecosystem` | Protocol/platform | `insteon`, `hue`, `shelly`, `wled`, `somfy`, `dmx`, `itach`, `ip`, `spotify` |
+| `ecosystem` | Protocol/platform | `insteon`, `hue`, `shelly`, `wled`, `somfy`, `dmx`, `itach`, `ip`, `spotify`, `homebridge` |
 | `device_id` | Device ID from config files | `kitchen`, `giantP`, `shades`, `bedroomProjector` |
 | `attribute` | State or control channel | `state`, `set`, `status`, `brightness`, `position` |
 
@@ -180,8 +186,9 @@ The `location` for each device comes from a new field in `lights.json` and `devi
 ### ESPSomfy-RTS
 - Enable MQTT in ESPSomfy-RTS Network settings (web UI)
 - Set root topic (e.g., `espsomfy`)
-- Topics: `espsomfy/shades/<id>/position` (0-100), `espsomfy/shades/<id>/direction` (-1/0/1), `espsomfy/shades/<id>/direction/set` (commands)
-- ESPSomfy also publishes `status` (online/offline via LWT), firmware version, IP address
+- Topics published: `espsomfy/shades/<id>/position` (0-100), `espsomfy/shades/<id>/direction` (-1/0/1), `espsomfy/shades/<id>/name`, `espsomfy/shades/<id>/tiltPosition`
+- Topics subscribed: `espsomfy/shades/<id>/direction/set`, `espsomfy/shades/<id>/target/set` (0-100%)
+- Also publishes `status` (online/offline via LWT), firmware, IP address
 - In `src/somfyBridge.js`, subscribe and translate. Can optionally switch commands from HTTP to MQTT.
 
 ### DMX Bridge
@@ -264,55 +271,104 @@ The `location` for each device comes from a new field in `lights.json` and `devi
 
 ---
 
-## Stage 6: Alexa Integration via AWS IoT Core
+## Stage 6: Homebridge MQTT Integration
 
-**What:** Replace the one-way SQS command path with bidirectional AWS IoT Core Device Shadows. This gives Alexa both command delivery and state reporting through a single channel.
+**What:** Bridge Homebridge accessories to the MQTT bus using `homebridge-mqttthing`, enabling HomeKit devices to participate in state tracking.
 
-**Why IoT Core over DynamoDB:** IoT Core is purpose-built for this. Device Shadows store desired + reported state natively. IoT Rules can trigger the Lambda for proactive ChangeReports. It's the architecture AWS recommends for Alexa Smart Home Skills with local devices. Cost is effectively free for a single home (~$1/million messages).
+**Why its own stage:** Homebridge is a separate process with its own lifecycle. Integrating it via MQTT keeps it loosely coupled — Apollo and Homebridge don't need to know about each other directly.
 
-**Why not keep SQS:** SQS was the right choice when the skill was command-only. Now that state reporting is a goal, IoT Core provides both directions in one service. SQS can run in parallel during migration.
+**Changes:**
+- Install `homebridge-mqttthing` plugin on the existing Homebridge 1.x instance
+- Configure accessories in Homebridge that map to MQTT topics:
+  - Door buzzer: publish lock/unlock state, subscribe to commands
+  - Optionally expose Apollo-controlled devices to HomeKit (lights, shades, scenes)
+- Apollo subscribes to Homebridge state topics, publishes commands when needed
+- Homebridge subscribes to Apollo state topics, reflects accurate device state in HomeKit
 
-### Architecture
-
+**Topic mapping example (door buzzer):**
+```json
+{
+  "accessory": "mqttthing",
+  "type": "lockMechanism",
+  "name": "Front Door",
+  "topics": {
+    "setLockTargetState": "apollo/entrance/homebridge/door/set",
+    "getLockCurrentState": "apollo/entrance/homebridge/door/state"
+  }
+}
 ```
-Alexa ──► Lambda ──► IoT Shadow (desired) ──► Apollo (via MQTT subscribe)
-Alexa ◄── Lambda ◄── IoT Shadow (reported) ◄── Apollo (via MQTT publish)
-Alexa ◄── Event Gateway ◄── IoT Rule ──► Lambda (proactive ChangeReports)
-```
 
-### Changes — Apollo side:
-- Add `aws-iot-device-sdk-v2` npm package
-- Create `src/iotCoreBridge.js`:
-  - Connect to AWS IoT Core via MQTT (TLS, X.509 certificates)
-  - For each Alexa-exposed device, maintain an IoT Thing Shadow
-  - Subscribe to shadow delta topics (desired state changes from Alexa)
-  - On local state changes (from Mosquitto), update the shadow's reported state
-  - Bridge: subscribe to local `apollo/+/+/+/state`, publish to IoT shadow
-- Provision IoT Thing + certificates via AWS CLI or console
-- Add `.env` vars: `IOT_ENDPOINT`, `IOT_CERT_PATH`, `IOT_KEY_PATH`, `IOT_CA_PATH`
+**Homebridge 2.0 + Matter (future note):** Homebridge 2.0 can act as a Matter bridge, exposing devices to Alexa/Google/Apple natively. This could eventually complement or replace the custom Alexa Skill for some devices, but plugin support for Matter is not mature yet. Revisit when the HA migration is closer and Matter plugins have shipped.
 
-### Changes — Alexa Lambda side (separate repo):
-- **ReportState handler:** On `Alexa.ReportState`, read the IoT Device Shadow's `reported` state, return `StateReport`
-- **Command delivery:** On power/brightness directives, update the shadow's `desired` state (instead of or in addition to SQS)
-- **Proactive ChangeReports (optional, requires account linking):**
-  - IoT Rule triggers Lambda when shadow `reported` state changes
-  - Lambda sends `Alexa.ChangeReport` to Alexa Event Gateway with LWA OAuth token
-  - Requires Login with Amazon account linking in the skill
+**Test:** Trigger the door buzzer via HomeKit. Verify MQTT state published. Verify Apollo sees the state change. Send a command from Apollo, verify HomeKit reflects the change.
 
-### Migration path:
-1. Deploy IoT Core bridge for **state reporting only** (Apollo publishes reported state)
-2. Add ReportState handler to Lambda (reads shadow)
-3. Keep SQS for commands initially — both paths work in parallel
-4. Once stable, optionally migrate commands from SQS to shadow desired state
-5. Add proactive ChangeReports (requires account linking)
-
-**Test:** Turn on a light via Alexa. Verify shadow `reported` state updates. Ask Alexa "is the kitchen light on?" — verify correct response. Change light via physical switch — verify shadow updates via the Insteon/Hue event stream.
-
-**Deployable independently:** Yes. SQS continues working. IoT Core is additive.
+**Deployable independently:** Yes. Homebridge continues to work standalone if MQTT fails.
 
 ---
 
-## Stage 7: Health Monitoring + Self-Diagnosis
+## Stage 7: Alexa State Reporting via DynamoDB
+
+**What:** Apollo writes device state to DynamoDB on every MQTT state change. The Alexa Lambda reads it for `ReportState` directives. This gives Alexa accurate answers to "is the kitchen light on?"
+
+**Why DynamoDB (not IoT Core):** Apollo already has AWS credentials for SQS. DynamoDB is free tier, requires no MQTT broker in the cloud, no IoT certificates, no shadow delta logic. The end-state Alexa integration is Home Assistant + Nabu Casa, which replaces all of this — so keep the interim solution simple.
+
+**Why ReportState only (not ChangeReport):** Proactive ChangeReports require Login with Amazon OAuth account linking, token management, and Event Gateway integration. Without ChangeReport, the Alexa app still shows correct state when opened (it polls via ReportState). Physical switch changes show up on the next app open. This is acceptable for a transition architecture.
+
+### Changes — Apollo side:
+- Add `@aws-sdk/lib-dynamodb` as dependency
+- Create `src/alexaStateReporter.js`:
+  - Subscribe to all state topics on Mosquitto (`apollo/+/+/+/state`)
+  - On state change, write to DynamoDB table `ApolloDeviceState`:
+    ```
+    Key: { endpointId: "kitchen" }
+    Attributes: { powerState: "ON", brightness: 80, timestamp: 1715300000 }
+    ```
+  - Map internal device IDs to Alexa endpoint IDs using `triggers.json`
+  - Debounce rapid state changes (100ms) to avoid excessive writes
+  - Set TTL on rows (`expiresAt`: 24h from now) to auto-expire stale state
+
+### Changes — Alexa Lambda side ([Apollo-Alexa-Skill](https://github.com/raypp2/Apollo-Alexa-Skill)):
+- Add `Alexa.ReportState` directive handler:
+  - Read device state from DynamoDB by `endpointId`
+  - Return `StateReport` with properties:
+    - `Alexa.PowerController.powerState` (all devices)
+    - `Alexa.BrightnessController.brightness` (dimmable lights)
+    - `Alexa.RangeController` (shades position)
+    - `Alexa.Speaker.volume` / `Alexa.Speaker.muted` (speakers)
+    - `Alexa.ThermostatController.thermostatMode` (AC)
+    - `Alexa.LockController.lockState` (locks)
+  - Set `proactivelyReported: false` in discovery response (skip ChangeReport)
+  - Set `retrievable: true` for all supported properties
+- Add IAM permission for DynamoDB read (`dynamodb:GetItem` on `ApolloDeviceState`)
+
+### DynamoDB table design:
+- Table name: `ApolloDeviceState`
+- Partition key: `endpointId` (string)
+- No sort key (one row per device)
+- TTL attribute: `expiresAt`
+- On-demand capacity mode (free tier: 25 RCU/WCU, more than enough)
+
+### Alexa capability interfaces currently supported:
+
+| Device Type | Alexa Interface | Retrievable Properties |
+|-------------|----------------|----------------------|
+| Lights (on/off) | `Alexa.PowerController` | `powerState` |
+| Lights (dimming) | `Alexa.BrightnessController` | `brightness` |
+| Shades | `Alexa.RangeController` | position (0-100) |
+| Speakers | `Alexa.Speaker` | `volume`, `muted` |
+| AC | `Alexa.ThermostatController` | `thermostatMode` |
+| Locks | `Alexa.LockController` | `lockState` |
+| Scenes/Macros | `Alexa.SceneController` | None (stateless) |
+
+**Note:** Color control (`Alexa.ColorController`) is on the roadmap but not yet implemented in Apollo's drivers.
+
+**Test:** Turn on a light via Alexa → check DynamoDB row updated. Ask "Alexa, is the kitchen light on?" → verify correct response. Change light via physical switch → verify DynamoDB updates via Insteon/Hue event stream → verify Alexa reports correctly on next query.
+
+**Deployable independently:** Yes. SQS command path unchanged. DynamoDB writes are additive. Lambda ReportState handler can be deployed separately.
+
+---
+
+## Stage 8: Health Monitoring + Self-Diagnosis
 
 **What:** Apollo monitors MQTT for device health and alerts when things go wrong.
 
@@ -349,16 +405,37 @@ Alexa ◄── Event Gateway ◄── IoT Rule ──► Lambda (proactive Cha
 | 3 | Insteon state publishing | Medium | Stage 1 |
 | 4 | Hue SSE event stream | Medium | Stage 1 |
 | 5 | iTach + TCP persistent connections | Medium-Large | Stage 1 |
-| 6 | Alexa via AWS IoT Core | Large | Stages 1-4 (needs state data flowing) |
-| 7 | Health monitoring | Small-Medium | Stages 1-4 |
+| 6 | Homebridge MQTT integration | Small-Medium | Stage 1 |
+| 7 | Alexa ReportState via DynamoDB | Medium | Stages 1-4 (needs state data) |
+| 8 | Health monitoring + self-diagnosis | Small-Medium | Stages 1-4 |
 
-Stages 2, 3, and 4 can be done in any order after Stage 1. Stage 5 is independent. Stage 6 benefits from having several ecosystems publishing state. Stage 7 can be added at any point after Stage 1.
+Stages 2-6 can be done in any order after Stage 1. Stage 7 benefits from having several ecosystems publishing state. Stage 8 can be added at any point after Stage 1.
 
 ## Spotify
 
 Not part of the staged MQTT rollout. Spotify state (`getMyCurrentPlaybackState()`) will be polled on a timer and published to `apollo/home/spotify/<device_id>/state` for the dashboard "now playing" feature. Can be added at any stage after Stage 1.
 
+## Future: Home Assistant Migration
+
+The long-term architecture replaces most of Apollo's infrastructure:
+
+| Component | Current | After HA Migration |
+|-----------|---------|-------------------|
+| Alexa integration | Custom skill + Lambda + SQS | Nabu Casa ($7.50/mo) — handles everything |
+| Device control | Apollo (Node.js) | Home Assistant |
+| State tracking | Mosquitto + MQTT | Home Assistant + Mosquitto (HA has native MQTT) |
+| HomeKit | Homebridge 1.x | HA's HomeKit integration or Homebridge 2.0 + Matter |
+| Dashboard | Custom HTML | Home Assistant Lovelace |
+| Health monitoring | Apollo healthMonitor.js | HA automations + notifications |
+
+**What survives the migration:** Mosquitto broker, MQTT topic conventions, native MQTT device configurations (Shelly, WLED, ESPSomfy-RTS, DMX). These are infrastructure investments, not throwaway work.
+
+**What gets replaced:** Apollo itself, the custom Alexa skill/Lambda, SQS, DynamoDB state cache. These are kept intentionally simple so they're easy to decommission.
+
 ## Not in Scope
 
 - **Dashboard HTML refactor** — separate project, will consume MQTT state when ready
-- **Proactive Alexa ChangeReports** — future upgrade after ReportState works (requires OAuth account linking with Login with Amazon)
+- **Proactive Alexa ChangeReports** — skipped in favor of ReportState only (HA + Nabu Casa handles this natively later)
+- **AWS IoT Core** — overkill for transition period; DynamoDB is simpler
+- **Alexa color control** — roadmap item, not part of MQTT rollout
+- **Homebridge 2.0 upgrade** — revisit when Matter plugin ecosystem matures
