@@ -30,6 +30,15 @@
  *              60s for devices that have a power_query configured, so the
  *              dashboard has real state even between commands.
  *
+ *              (issue #13 follow-up) Not every device frames responses the
+ *              same way: PJLink embeds a literal `\r` in its response
+ *              strings, while the Anthem receiver replies `;`-terminated
+ *              with no `\r` at all. deriveTerminator() picks the connection's
+ *              framing terminator from the device's own
+ *              power_response_on/off config (see DeviceConnection's
+ *              `terminator` option), and parsePowerResponse() strips that
+ *              SAME terminator before comparing, instead of hardcoding `\r`.
+ *
  *              Rollback: set ITACH_PERSISTENT_CONNECTIONS=false to route back
  *              to the original per-command implementation, kept verbatim
  *              below as _legacy_send_ip_command.
@@ -74,12 +83,55 @@ function isInFlight(device_info) {
 }
 
 /**
- * Matches a (already `\r`-framing-stripped) power-query response against a
- * device's configured power_response_on/off strings. Config values are also
- * stripped of a trailing `\r` before comparing (some configs, like the PJLink
- * projector, embed a literal `\r` terminator in the expected string; others,
- * like the Anthem's `;`-terminated strings, do not) so both shapes match the
- * connection's `\r`-framed response consistently.
+ * Derives the response-framing terminator for a device's persistent
+ * connection from its OWN configured power_response_on/off strings, rather
+ * than assuming every device speaks `\r`-terminated protocols like the
+ * PJLink projector. An Anthem-style receiver answers `Z1POW?;` with
+ * `Z1POW1;` -- semicolon-terminated, no `\r` at all -- so framing on `\r`
+ * would never see a terminator and every query would time out.
+ * @param {object} device_info - a devices.json entry with power_commands
+ * @returns {string} the terminator to frame responses on (defaults to `\r`)
+ */
+function deriveTerminator(device_info) {
+	const powerCommands = (device_info && device_info.power_commands) || {};
+	const onValue = String(powerCommands.power_response_on || '');
+	const offValue = String(powerCommands.power_response_off || '');
+	if (onValue.endsWith(';') || offValue.endsWith(';')) {
+		return ';';
+	}
+	if (onValue.endsWith('\r') || offValue.endsWith('\r')) {
+		return '\r';
+	}
+	return '\r';
+}
+
+/**
+ * Strips a trailing terminator (if present) from a string. Used to normalize
+ * both the config's expected response strings and the already-framed
+ * response before comparing them, so config values that embed the
+ * terminator literally (PJLink's `%1POWR=1\r`) and ones that don't (Anthem's
+ * `Z1POW1;`, which -- being framed on `;` -- also arrives with the `;`
+ * still attached) compare consistently either way.
+ * @param {string} str
+ * @param {string} terminator
+ * @returns {string}
+ */
+function stripTerminator(str, terminator) {
+	if (terminator && str.endsWith(terminator)) {
+		return str.slice(0, -terminator.length);
+	}
+	return str;
+}
+
+/**
+ * Matches a power-query response (already framed by DeviceConnection on this
+ * device's own terminator -- see deriveTerminator()) against a device's
+ * configured power_response_on/off strings. Both the config values and the
+ * response are stripped of that SAME trailing terminator before comparing
+ * (some configs, like the PJLink projector, embed a literal `\r` terminator
+ * in the expected string; others, like the Anthem's `;`-terminated strings,
+ * do not) so both shapes match consistently regardless of which terminator
+ * this device actually frames on.
  * @param {object} device_info - a devices.json entry with power_commands
  * @param {string|null} response
  * @returns {"ON"|"OFF"|null}
@@ -88,10 +140,11 @@ function parsePowerResponse(device_info, response) {
 	if (response === null || typeof response === 'undefined') {
 		return null;
 	}
+	const terminator = deriveTerminator(device_info);
 	const powerCommands = device_info.power_commands || {};
-	const onValue = String(powerCommands.power_response_on || '').replace(/\r$/, '');
-	const offValue = String(powerCommands.power_response_off || '').replace(/\r$/, '');
-	const normalized = String(response).replace(/\r$/, '');
+	const onValue = stripTerminator(String(powerCommands.power_response_on || ''), terminator);
+	const offValue = stripTerminator(String(powerCommands.power_response_off || ''), terminator);
+	const normalized = stripTerminator(String(response), terminator);
 
 	if (onValue && normalized === onValue) {
 		return 'ON';
@@ -176,6 +229,7 @@ async function send_ip_command(debug_id, device_info, device_cmd, check_for_powe
 	try {
 		const conn = getConnection(device_info.address, device_info.port, {
 			name: `${device_info.address}:${device_info.port}`,
+			terminator: deriveTerminator(device_info),
 		});
 		registerStatusPublisher(conn, device_info);
 
@@ -277,7 +331,10 @@ async function pollDevicePower(device) {
 	}
 
 	try {
-		const conn = getConnection(device.address, device.port, { name: `${device.address}:${device.port}` });
+		const conn = getConnection(device.address, device.port, {
+			name: `${device.address}:${device.port}`,
+			terminator: deriveTerminator(device),
+		});
 		registerStatusPublisher(conn, device);
 		const response = await conn.send(device.power_commands.power_query, { expectResponse: true });
 		const powerState = parsePowerResponse(device, response);
@@ -441,6 +498,7 @@ module.exports = {
     startIpPowerPoller,
     // Exported for tests only.
     parsePowerResponse,
+    deriveTerminator,
     _legacy_send_ip_command,
     _persistentConnectionsEnabled: persistentConnectionsEnabled,
 };

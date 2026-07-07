@@ -47,6 +47,11 @@
  *               status transition. 'online' likewise only fires on an actual
  *               offline->online transition, so a benign-close/lazy-reconnect
  *               cycle never re-emits it.
+ *
+ *               Responses are framed on a per-connection `terminator` option
+ *               (default `'\r'`) rather than a hardcoded `\r` -- some devices
+ *               (e.g. an Anthem receiver's `Z1POW1;`-style replies) terminate
+ *               with `;` and no `\r` at all. Multi-char terminators work too.
  */
 
 const net = require('net');
@@ -60,6 +65,7 @@ const DEFAULT_BACKOFF_INITIAL_MS = 1000;  // reconnect backoff floor
 const DEFAULT_BACKOFF_MAX_MS = 30000;     // reconnect backoff ceiling
 const DEFAULT_KEEPALIVE_MS = 30000;       // TCP-level keepalive probe interval on idle sockets
 const MAX_PUMP_WAIT_MS = 250;             // poll-loop fallback cap while offline (bounded; real wakeups are event-driven)
+const DEFAULT_TERMINATOR = '\r';          // response-framing terminator (overridable per-connection; see `terminator` opt)
 const BENIGN_CLOSE_LOG_INTERVAL_MS = 3600000; // at most once/hour per connection (see _logBenignClose)
 
 /**
@@ -81,6 +87,7 @@ class DeviceConnection {
         backoffInitialMs = DEFAULT_BACKOFF_INITIAL_MS,
         backoffMaxMs = DEFAULT_BACKOFF_MAX_MS,
         keepAliveMs = DEFAULT_KEEPALIVE_MS,
+        terminator = DEFAULT_TERMINATOR,
     }) {
         this.host = host;
         this.port = port;
@@ -93,6 +100,7 @@ class DeviceConnection {
         this.backoffInitialMs = backoffInitialMs;
         this.backoffMaxMs = backoffMaxMs;
         this.keepAliveMs = keepAliveMs;
+        this.terminator = terminator;
 
         this.socket = null;
         this.status = 'offline'; // 'online' | 'offline' -- PUBLIC reachability status (see onStatusChange doc comment); only ever flips on a non-benign transition, decoupled from the private `_connected` bookkeeping flag below.
@@ -440,7 +448,7 @@ class DeviceConnection {
             if (item.expectResponse) {
                 this._activeDataHandler = (chunk) => {
                     buffer += chunk.toString();
-                    const idx = buffer.indexOf('\r');
+                    const idx = buffer.indexOf(this.terminator);
                     if (idx !== -1) {
                         finish(buffer.slice(0, idx));
                     }

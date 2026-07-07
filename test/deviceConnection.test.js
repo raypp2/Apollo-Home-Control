@@ -143,6 +143,34 @@ test('resolves with the response framed up to (and excluding) the \\r terminator
     assert.strictEqual(response, 'RESULT=OK');
 });
 
+test('the default \\r terminator still works when passed explicitly', async () => {
+    const { port } = await startFixtureServer((socket) => {
+        socket.on('data', (data) => {
+            if (data.toString() === 'QUERY') {
+                socket.write('RESULT=OK\r');
+            }
+        });
+    });
+
+    const conn = trackConn(new DeviceConnection({ host: '127.0.0.1', port, terminator: '\r' }));
+    const response = await conn.send('QUERY', { expectResponse: true, timeoutMs: 1000 });
+    assert.strictEqual(response, 'RESULT=OK');
+});
+
+test('frames responses on a `;`-terminator (Anthem-style, no \\r at all) when configured', async () => {
+    const { port } = await startFixtureServer((socket) => {
+        socket.on('data', (data) => {
+            if (data.toString() === 'Z1POW?;') {
+                socket.write('Z1POW1;'); // no \r -- this is the whole point of the terminator option
+            }
+        });
+    });
+
+    const conn = trackConn(new DeviceConnection({ host: '127.0.0.1', port, terminator: ';' }));
+    const response = await conn.send('Z1POW?;', { expectResponse: true, timeoutMs: 1000 });
+    assert.strictEqual(response, 'Z1POW1');
+});
+
 test('resolves null (not a rejection) when no response arrives before the timeout', async () => {
     // Accepts the connection but never responds.
     const { port } = await startFixtureServer(() => {});
