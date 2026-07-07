@@ -143,7 +143,7 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
     let curDevice = extractDevice(apiDevice);
     if(!curDevice) {
         console.log("%d - Device not found", debugId);
-        if (typeof response != 'undefined') { response.end("Completed processing request."); }
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Device not found."); }
         return;
     }
 
@@ -151,10 +151,10 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
     let curExecute = extractCommand(curDevice, apiCommand);
     if(!curExecute) {
         console.log("%d - Command not found", debugId);
-        if (typeof response != 'undefined') { response.end("Completed processing request."); }
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Command not found."); }
         return;
     }
-    
+
     console.log("%d - API Device ID: %s", debugId, apiDevice);
     console.log("%d - API Command: %s", debugId, apiCommand);
     console.log("%d - API Param1: %s", debugId, apiParam1);
@@ -248,7 +248,7 @@ function handleDeviceScene(debugId, apiDevice, apiCommand, response) {
     
     if(!curDeviceScene) {
         console.log("%d - Device scene not found", debugId);
-        // response.status(404).send("ERROR: Device or command not found.")
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Device scene not found."); }
         return;
     }
 
@@ -261,7 +261,7 @@ function handleDeviceScene(debugId, apiDevice, apiCommand, response) {
         curAudio = extractDevice(curDeviceScene.audioDevice);
         if(!curAudio) {
             console.log("%d - Audio device not found", debugId);
-            // response.status(404).send("ERROR: Device not found.")
+            if (typeof response != 'undefined') { response.status(404).send("ERROR: Audio device not found."); }
             return;
         }
 
@@ -270,7 +270,7 @@ function handleDeviceScene(debugId, apiDevice, apiCommand, response) {
         curAudioOff = extractCommand(curAudio, "OFF");
         if(!curAudioInput || !curAudioOff) {
             console.log("%d - Audio command not found", debugId);
-            // response.status(404).send("ERROR: Command not found.")
+            if (typeof response != 'undefined') { response.status(404).send("ERROR: Audio command not found."); }
             return;
         }
     }
@@ -294,7 +294,7 @@ function handleDeviceScene(debugId, apiDevice, apiCommand, response) {
         curVideo = extractDevice(curDeviceScene.videoDevice);
         if(!curVideo) {
             console.log("%d - Video device not found", debugId);
-            // response.status(404).send("ERROR: Device not found.")
+            if (typeof response != 'undefined') { response.status(404).send("ERROR: Video device not found."); }
             return;
         }
 
@@ -303,7 +303,7 @@ function handleDeviceScene(debugId, apiDevice, apiCommand, response) {
         curVideoOff = extractCommand(curVideo, "OFF");
         if(!curVideoOn || !curVideoOff) {
             console.log("%d - Video command not found", debugId);
-            // response.status(404).send("ERROR: Command not found.")
+            if (typeof response != 'undefined') { response.status(404).send("ERROR: Video command not found."); }
             return;
         }
     }
@@ -364,7 +364,7 @@ function handleMacro(debugId, apiDevice, apiCommand, response) {
     
     if(!macro_commands) {
         console.log("%d - Macro commands not found", debugId);
-        // response.status(404).send("ERROR: Device or command not found.")
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Macro not found."); }
         return;
     }
 
@@ -395,11 +395,17 @@ function handleMacro(debugId, apiDevice, apiCommand, response) {
  */
 function handleSpeaker(debugId, apiDevice, apiCommand, apiParam1, apiParam2, response) {
 
+    if(!apiCommand) {
+        console.log("%d - ERROR: Command not specified", debugId);
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Command not found."); }
+        return;
+    }
+
     // Search for the device
     let curDevice = extractDevice(apiDevice);
     if(!curDevice) {
         console.log("%d - Device not found", debugId);
-        // response.status(404).send("ERROR: Device not found.")
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Device not found."); }
         return;
     }
 
@@ -419,20 +425,22 @@ function handleSpeaker(debugId, apiDevice, apiCommand, apiParam1, apiParam2, res
     console.log("%d - Device Execute: %s\n", debugId, curExecute);
 
     if(!curExecute) {
-        if (apiCommand.toUpperCase() == "SETVOLUME" || apiCommand.toUpperCase() == "ADJUSTVOLUME" || apiCommand.toUpperCase() == "SETMUTE") {
+        if (apiCommand == "SETVOLUME" || apiCommand == "ADJUSTVOLUME" || apiCommand == "SETMUTE") {
             console.log("%d - Speaker device command", debugId);
             alexaSpeaker(logging.operation_num, curDevice, apiCommand, apiParam1, apiParam2);
+            if (typeof response != 'undefined') { response.end("Completed processing request."); }
         } else {
             console.log("%d - ERROR: Unknown command %s", debugId, apiCommand);
-            // response.status(404).send("ERROR: Command not found.")
+            if (typeof response != 'undefined') { response.status(404).send("ERROR: Command not found."); }
         }
         return;
     }
 
     // Process as a standard device command
     send_ip_command(logging.operation_num, curDevice, curExecute, false);
-    return; 
-    
+    if (typeof response != 'undefined') { response.end("Completed processing request."); }
+    return;
+
 }
 
 /**
@@ -444,11 +452,17 @@ function handleSpeaker(debugId, apiDevice, apiCommand, apiParam1, apiParam2, res
  */
 function handleDoor(debugId, apiDevice, apiCommand, apiParam1, response) {
 
+    if(!apiParam1) {
+        console.log("%d - ERROR: Command not specified", debugId);
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Command not found."); }
+        return;
+    }
+
     // Search for the device
     let curDevice = extractDevice("door");
     if(!curDevice) {
         console.log("%d - Door device not found", debugId);
-        // response.status(404).send("ERROR: Device not found.")
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Device not found."); }
         return;
     }
 
@@ -456,7 +470,7 @@ function handleDoor(debugId, apiDevice, apiCommand, apiParam1, response) {
     let curExecute = extractCommand(curDevice, apiCommand);
     if(!curExecute) {
         console.log("%d - Command not found", debugId);
-        // response.status(404).send("ERROR: Command not found.")
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Command not found."); }
         return;
     }
 
@@ -468,23 +482,30 @@ function handleDoor(debugId, apiDevice, apiCommand, apiParam1, response) {
     console.log("%d - Device address: %s", debugId, curDevice.address);
     console.log("%d - Device Execute: %s\n", debugId, curExecute);
 
-    if (apiParam1.toUpperCase() == "UNLOCK") {
+    if (apiParam1 == "UNLOCK") {
         console.log("%d - Door unlock command", debugId);
         send_cc_command(curDevice.address,curExecute,logging.operation_num);
+        if (typeof response != 'undefined') { response.end("Completed processing request."); }
     } else {
         console.log("%d - ERROR: Unknown command %s", debugId, apiCommand);
-        // response.status(404).send("ERROR: Command not found.")
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Command not found."); }
     }
 
 }
 
 function handleAC(debugId, apiDevice, apiCommand, apiParam1, response) {
 
+    if(!apiCommand) {
+        console.log("%d - ERROR: Command not specified", debugId);
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Command not found."); }
+        return;
+    }
+
     // Search for the device
     let curDevice = extractDevice(apiDevice);
     if(!curDevice) {
         console.log("%d - Device not found", debugId);
-        // response.status(404).send("ERROR: Device not found.")
+        if (typeof response != 'undefined') { response.status(404).send("ERROR: Device not found."); }
         return;
     }
 
@@ -502,23 +523,26 @@ function handleAC(debugId, apiDevice, apiCommand, apiParam1, response) {
     console.log("%d - Device Execute: %s\n", debugId, curExecute);
 
     if(!curExecute) {
-        if (apiCommand.toUpperCase() == "ADJUSTTARGETTEMPERATURE") {
+        if (apiCommand == "ADJUSTTARGETTEMPERATURE") {
             console.log("%d - Adjust AC temperature by %s", debugId, apiParam1);
             alexaAC(logging.operation_num, curDevice, apiCommand, apiParam1);
+            if (typeof response != 'undefined') { response.end("Completed processing request."); }
 
-        } else if (apiCommand.toUpperCase() == "SETTHERMOSTATMODE") {
+        } else if (apiCommand == "SETTHERMOSTATMODE") {
             console.log("%d - Change AC mode to %s", debugId, apiParam1);
             alexaAC(logging.operation_num, curDevice, apiCommand, apiParam1);
+            if (typeof response != 'undefined') { response.end("Completed processing request."); }
 
         } else {
             console.log("%d - ERROR: Unknown command %s", debugId, apiCommand);
-            // response.status(404).send("ERROR: Command not found.")
+            if (typeof response != 'undefined') { response.status(404).send("ERROR: Command not found."); }
         }
         return;
     }
 
     // Process as a standard device command
     send_ir_command(curDevice.address,curExecute,logging.operation_num);
+    if (typeof response != 'undefined') { response.end("Completed processing request."); }
     return;
 }
 

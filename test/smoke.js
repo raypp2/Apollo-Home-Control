@@ -166,7 +166,7 @@ async function run() {
       );
     }
   }
-  await test('DEVICES unknown device', '/api/devices/NONEXISTENT/on', 200);
+  await test('DEVICES unknown device', '/api/devices/NONEXISTENT/on', 404);
 
   // --- API endpoints: LIGHTS ---
   console.log('\n/api/lights endpoints');
