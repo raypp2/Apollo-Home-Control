@@ -4,6 +4,8 @@
 	"type": "Somfy-Bridge",
 	"address": "###.###.###.###",
 	"port": "8081",
+	"location": "bedroom", // MQTT topic level 2 (apollo/<location>/...). Default if omitted: "home"
+	"mqttName": "shades",  // MQTT topic level 4. Default if omitted: the "id" above
 	"icon": "roller_shades",
 	"alexa": {
 		// Alexa, Turn [on/off] blackout shade [one, two, three]
