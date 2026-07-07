@@ -85,6 +85,32 @@ const ECOSYSTEM_BY_TYPE = {
     spotify: 'spotify',
 };
 
+// Config `type` values that genuinely publish MQTT state today. wled/dmx are
+// deliberately excluded -- they don't publish state yet, so marking them
+// "stateful" for Alexa would surface an empty/stale shadow, which the Alexa
+// app shows as "device unresponsive".
+const ALEXA_STATEFUL_TYPES = new Set(['insteon', 'hue-group', 'shelly', 'Somfy-Bridge']);
+
+/**
+ * Pure qualification check: does this config entry both (a) have an `alexa`
+ * block (i.e. is exposed to Alexa at all) and (b) belong to an ecosystem that
+ * actually publishes MQTT state? Single source of truth, shared by
+ * publishState/publishUnreachable (which shadow-mirror state for qualifying
+ * entries) and alexaTriggers.js (which stamps `statefulMqtt: true` into
+ * triggers.json for the Lambda to trust).
+ *
+ * Deliberately config-free / side-effect-free (no ensureInit(), no require
+ * of '../index' or './mqttClient') so importing it never boots Apollo --
+ * alexaTriggers.js needs to import this at module-load time, before index.js
+ * has finished exporting.
+ *
+ * @param {object} entry - a lights.json/devices.json entry
+ * @returns {boolean}
+ */
+function isAlexaStateful(entry) {
+    return Boolean(entry && entry.alexa && ALEXA_STATEFUL_TYPES.has(entry.type));
+}
+
 /**
  * Lowercases a string and replaces spaces with hyphens (used for `location`).
  * @param {string} value
@@ -119,6 +145,33 @@ function topicFor(entry, attribute) {
 }
 
 /**
+ * Builds the AWS IoT device shadow update topic for an alexa-stateful entry.
+ * The Mosquitto -> IoT Core bridge forwards this 1:1 (it can remap topics but
+ * not transform payloads), so Apollo itself must publish the shadow envelope
+ * shape -- there's no translation layer downstream.
+ * @param {object} entry
+ * @returns {string}
+ */
+function shadowTopicFor(entry) {
+    return `$aws/things/apollo-${entry.id}/shadow/update`;
+}
+
+/**
+ * If `entry` qualifies as alexa-stateful, mirrors `state` to its IoT shadow
+ * update topic as `{"state":{"reported":state}}`, QoS 1, not retained (the
+ * shadow service persists server-side; a locally-retained envelope would
+ * replay stale state at every bridge reconnect).
+ * @param {object} entry
+ * @param {object} state - the same merged+stamped canonical state object
+ */
+function publishShadowIfStateful(entry, state) {
+    if (!isAlexaStateful(entry)) {
+        return;
+    }
+    doPublish(shadowTopicFor(entry), { state: { reported: state } }, { qos: 1, retain: false });
+}
+
+/**
  * Merges `state` into the last-known state for this entry, stamps reachable/
  * timestamp/source, publishes retained QoS 1 JSON to topicFor(entry, 'state'),
  * and updates the in-memory cache.
@@ -146,6 +199,7 @@ function publishState(entry, state, source) {
 
     stateCache.set(topic, merged);
     doPublish(topic, merged, { qos: 1, retain: true });
+    publishShadowIfStateful(entry, merged);
 
     return merged;
 }
@@ -170,6 +224,7 @@ function publishUnreachable(entry) {
 
     stateCache.set(topic, merged);
     doPublish(topic, merged, { qos: 1, retain: true });
+    publishShadowIfStateful(entry, merged);
 
     return merged;
 }
@@ -224,5 +279,6 @@ module.exports = {
     publishUnreachable,
     lastState,
     findByTopic,
+    isAlexaStateful,
     _init,
 };

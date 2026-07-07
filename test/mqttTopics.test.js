@@ -215,3 +215,113 @@ test('findByTopic returns null for a malformed topic', () => {
     assert.strictEqual(mqttTopics.findByTopic('not/a/valid/apollo/topic/at/all'), null);
     assert.strictEqual(mqttTopics.findByTopic('apollo/home/insteon'), null);
 });
+
+// --- isAlexaStateful ---
+
+const STATEFUL_TYPES = ['insteon', 'hue-group', 'shelly', 'Somfy-Bridge'];
+const NON_STATEFUL_TYPES = ['wled', 'dmxFixture', 'iTach_serial', 'iTach_ir', 'iTach_CC', 'ip_control', 'spotify'];
+
+for (const type of STATEFUL_TYPES) {
+    test(`isAlexaStateful: type "${type}" WITH alexa config is stateful`, () => {
+        const entry = { id: 'thing', type, alexa: { invocations: ['Thing'] } };
+        assert.strictEqual(mqttTopics.isAlexaStateful(entry), true);
+    });
+
+    test(`isAlexaStateful: type "${type}" WITHOUT alexa config is not stateful`, () => {
+        const entry = { id: 'thing', type };
+        assert.strictEqual(mqttTopics.isAlexaStateful(entry), false);
+    });
+}
+
+for (const type of NON_STATEFUL_TYPES) {
+    test(`isAlexaStateful: type "${type}" WITH alexa config is still not stateful (doesn't publish MQTT state)`, () => {
+        const entry = { id: 'thing', type, alexa: { invocations: ['Thing'] } };
+        assert.strictEqual(mqttTopics.isAlexaStateful(entry), false);
+    });
+}
+
+test('isAlexaStateful returns false for a missing/undefined entry', () => {
+    assert.strictEqual(mqttTopics.isAlexaStateful(undefined), false);
+    assert.strictEqual(mqttTopics.isAlexaStateful(null), false);
+});
+
+// --- shadow envelope publishing (Stage 7) ---
+
+test('publishState: a stateful insteon entry publishes BOTH the canonical retained state AND a non-retained shadow envelope', () => {
+    const entry = { id: 'kitchen', type: 'insteon', alexa: { invocations: ['Kitchen'] } };
+    const result = mqttTopics.publishState(entry, { power: 'ON', brightness: 80 }, 'command');
+
+    assert.strictEqual(published.length, 2, 'expected canonical publish + shadow publish');
+
+    const canonical = published[0];
+    assert.strictEqual(canonical.topic, 'apollo/home/insteon/kitchen/state');
+    assert.deepStrictEqual(canonical.payload, result);
+    assert.deepStrictEqual(canonical.opts, { qos: 1, retain: true });
+
+    const shadow = published[1];
+    assert.strictEqual(shadow.topic, '$aws/things/apollo-kitchen/shadow/update');
+    assert.deepStrictEqual(shadow.payload, { state: { reported: result } });
+    assert.deepStrictEqual(shadow.opts, { qos: 1, retain: false }, 'shadow envelope must NOT be retained locally');
+});
+
+for (const type of ['hue-group', 'shelly', 'Somfy-Bridge']) {
+    test(`publishState: stateful type "${type}" also publishes the shadow envelope`, () => {
+        const entry = { id: 'thing', type, alexa: { invocations: ['Thing'] } };
+        mqttTopics.publishState(entry, { power: 'ON' }, 'event');
+
+        assert.strictEqual(published.length, 2);
+        assert.strictEqual(published[1].topic, '$aws/things/apollo-thing/shadow/update');
+    });
+}
+
+test('publishState: a dmx entry (not alexa-stateful-eligible type) publishes canonical only, no shadow', () => {
+    const entry = { id: 'ceiling', type: 'dmxFixture', alexa: { invocations: ['Ceiling'] } };
+    mqttTopics.publishState(entry, { power: 'ON' }, 'command');
+
+    assert.strictEqual(published.length, 1, 'dmx should not get a shadow envelope');
+    assert.strictEqual(published[0].topic, 'apollo/home/dmx/ceiling/state');
+});
+
+test('publishState: a wled entry (not alexa-stateful-eligible type) publishes canonical only, no shadow', () => {
+    const entry = { id: 'strips', type: 'wled', alexa: { invocations: ['Strips'] } };
+    mqttTopics.publishState(entry, { power: 'ON' }, 'command');
+
+    assert.strictEqual(published.length, 1, 'wled should not get a shadow envelope');
+    assert.strictEqual(published[0].topic, 'apollo/home/wled/strips/state');
+});
+
+test('publishState: an insteon entry with NO alexa config publishes canonical only, no shadow', () => {
+    const entry = { id: 'kitchen', type: 'insteon' };
+    mqttTopics.publishState(entry, { power: 'ON' }, 'command');
+
+    assert.strictEqual(published.length, 1, 'entries without alexa config should not get a shadow envelope');
+    assert.strictEqual(published[0].topic, 'apollo/home/insteon/kitchen/state');
+});
+
+test('publishUnreachable: a stateful entry also mirrors reachable:false to the shadow envelope', () => {
+    const entry = { id: 'kitchen', type: 'insteon', alexa: { invocations: ['Kitchen'] } };
+    mqttTopics.publishState(entry, { power: 'ON', brightness: 55 }, 'event');
+    published.length = 0;
+
+    const result = mqttTopics.publishUnreachable(entry);
+
+    assert.strictEqual(published.length, 2, 'expected canonical publish + shadow publish');
+
+    const canonical = published[0];
+    assert.strictEqual(canonical.topic, 'apollo/home/insteon/kitchen/state');
+    assert.strictEqual(canonical.payload.reachable, false);
+    assert.deepStrictEqual(canonical.opts, { qos: 1, retain: true });
+
+    const shadow = published[1];
+    assert.strictEqual(shadow.topic, '$aws/things/apollo-kitchen/shadow/update');
+    assert.deepStrictEqual(shadow.payload, { state: { reported: result } });
+    assert.strictEqual(shadow.payload.state.reported.reachable, false);
+    assert.deepStrictEqual(shadow.opts, { qos: 1, retain: false });
+});
+
+test('publishUnreachable: a non-stateful-type entry publishes canonical only, no shadow', () => {
+    const entry = { id: 'strips', type: 'wled', alexa: { invocations: ['Strips'] } };
+    mqttTopics.publishUnreachable(entry);
+
+    assert.strictEqual(published.length, 1);
+});
