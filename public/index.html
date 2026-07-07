@@ -25,14 +25,37 @@
       .command-button:active {
           background-color: #98bbd7; /* A slightly darker gray on hover */
       }
-  </style>
-  
-  
 
-    <!-- Updated AngularJS to latest 1.8.x -->
-    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js"></script>
-    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular-sanitize.js"></script>
-    
+      /* Stage 9: MQTT live dashboard -- connection indicator + unreachable dimming.
+         Minimal styling only; the full visual redesign is Stage 11. */
+      #apollo-connection-dot {
+          display: inline-block;
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          margin: 0 10px;
+          vertical-align: middle;
+          background-color: #f0ad4e; /* amber: polling (default until MQTT connects) */
+      }
+
+      #apollo-connection-dot.live {
+          background-color: #4caf50; /* green: live via MQTT */
+      }
+
+      .collection-item.unreachable {
+          opacity: 0.5;
+      }
+  </style>
+
+
+
+    <!-- Vendored locally (Stage 9, #21) so the dashboard works with internet down --
+         previously loaded from Google's CDN. -->
+    <script src="js/angular.min.js"></script>
+    <script src="js/angular-sanitize.js"></script>
+    <script src="js/mqtt.min.js"></script>
+    <script src="js/mqttDashboard.js"></script>
+
     <script type="text/javascript">
         var apollo = angular.module('apollo', ['ngSanitize']);
 
@@ -54,7 +77,25 @@
 
             fetchList();
 
-            $interval(fetchList, 5000, 10);
+            // Stage 9 (#21): MQTT is the live source of state once connected;
+            // $interval polling is the fallback while disconnected. See
+            // js/mqttDashboard.js for apolloLive.
+            var pollTimer = null;
+
+            window.apolloLive.register('LightingDevices', $scope, function () {
+                return $scope.devices;
+            });
+
+            window.apolloLive.onConnectionChange(function (connected) {
+                if (connected) {
+                    if (pollTimer) {
+                        $interval.cancel(pollTimer);
+                        pollTimer = null;
+                    }
+                } else if (!pollTimer) {
+                    pollTimer = $interval(fetchList, 5000);
+                }
+            });
 
         });
 
@@ -112,6 +153,26 @@ function fetchList() {
 
 fetchList();
 
+// Stage 9 (#21): same live/fallback pattern as LightingDevices. This is
+// also where shade `position` updates land (devices.json entries with
+// type "Somfy-Bridge").
+var pollTimer = null;
+
+window.apolloLive.register('Devices', $scope, function () {
+    return $scope.devices;
+});
+
+window.apolloLive.onConnectionChange(function (connected) {
+    if (connected) {
+        if (pollTimer) {
+            $interval.cancel(pollTimer);
+            pollTimer = null;
+        }
+    } else if (!pollTimer) {
+        pollTimer = $interval(fetchList, 5000);
+    }
+});
+
 });
 
 
@@ -133,6 +194,24 @@ fetchList();
         }
 
         fetchList();
+
+        // Stage 9 (#21): same live/fallback pattern as LightingDevices/Devices.
+        var pollTimer = null;
+
+        window.apolloLive.register('DeviceScenes', $scope, function () {
+            return $scope.devices;
+        });
+
+        window.apolloLive.onConnectionChange(function (connected) {
+            if (connected) {
+                if (pollTimer) {
+                    $interval.cancel(pollTimer);
+                    pollTimer = null;
+                }
+            } else if (!pollTimer) {
+                pollTimer = $interval(fetchList, 5000);
+            }
+        });
 
         });
 
@@ -169,6 +248,7 @@ fetchList();
     <nav>
       <div class="nav-wrapper">
         <a href="#" class="brand-logo right">Apollo</a>
+        <span id="apollo-connection-dot" title="polling"></span>
         <ul id="nav-mobile" class="left hide-on-med-and-down">
           <li><a href="#lights">Lights</a></li>
           <li><a href="#lightingScenes">Lighting Scenes</a></li>
@@ -185,13 +265,27 @@ fetchList();
       </div>
     </nav>
 
+    <script type="text/javascript">
+        // Stage 9 (#21): connection indicator dot, plain DOM (not inside any
+        // Angular controller -- lives in the nav, outside ng-controller
+        // scope). green/"live" while MQTT is connected, amber/"polling"
+        // while falling back to HTTP polling.
+        (function () {
+            var dot = document.getElementById('apollo-connection-dot');
+            window.apolloLive.onConnectionChange(function (connected) {
+                dot.classList.toggle('live', connected);
+                dot.title = connected ? 'live' : 'polling';
+            });
+        })();
+    </script>
+
   <a name="lights"></a>
   <!-- BEGIN Lights Angular Binding -->
   <div ng-controller="LightingDevices"> 
     <ul class="collection">
       <li class="collection-header"><h4>&nbsp;&nbsp;&nbsp;Lighting</h4></li>
 
-      <li class="collection-item avatar" ng-repeat="device in devices">
+      <li class="collection-item avatar" ng-repeat="device in devices" ng-class="{unreachable: device.unreachable}">
         <span class="{{device.icon}} circle"></span>
         <span class="title">{{device.title}}</span>
         <a href="#!" class="secondary-content">
@@ -239,7 +333,7 @@ fetchList();
       <ul class="collection">
         <li class="collection-header"><h4>&nbsp;&nbsp;&nbsp;Devices</h4></li>
   
-        <li class="collection-item avatar" ng-repeat="device in devices">
+        <li class="collection-item avatar" ng-repeat="device in devices" ng-class="{unreachable: device.unreachable}">
           <i class="material-symbols-outlined circle blue" style="font-size: 30px">{{device.icon}}</i>
           <span class="title">{{device.title}}</span>
           <p>
@@ -267,7 +361,7 @@ fetchList();
       <ul class="collection">
         <li class="collection-header"><h4>&nbsp;&nbsp;&nbsp;Device Scenes</h4></li>
   
-        <li class="collection-item avatar" ng-repeat="device in devices">
+        <li class="collection-item avatar" ng-repeat="device in devices" ng-class="{unreachable: device.unreachable}">
           <i class="material-symbols-outlined circle orange" style="font-size: 30px">{{device.icon}}</i>
           <span class="title">{{device.title}}</span>
           <a href="#!" class="secondary-content">

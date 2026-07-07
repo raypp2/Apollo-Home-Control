@@ -39,6 +39,129 @@ var spotifyApi = new SpotifyWebApi({
 
 const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
 
+// Stage 9 of the MQTT plan (issue #22) -- publishes what's currently playing
+// on Spotify to the bus every 10s so the dashboard can show a now-playing
+// card (Stage 11 builds the card; this stage only puts the data on the bus).
+// mqttClient never requires('../index'), so it's safe to require directly
+// here (see the module doc comment at the top of mqttClient.js).
+const mqttClient = require('./mqttClient');
+
+const NOW_PLAYING_TOPIC = 'apollo/home/spotify/player/state';
+const NOW_PLAYING_INTERVAL_MS = 10000;
+
+let nowPlayingTimer = null;
+// Tracks whether we're currently in an auth/API outage, so the "keep trying,
+// but don't spam the log or the (retained) topic" behavior only logs/publishes
+// once per outage -- on the transition into the outage, not on every 10s tick.
+let nowPlayingOutage = false;
+
+/**
+ * Builds the retained `apollo/home/spotify/player/state` payload from a
+ * spotify-web-api-node `getMyCurrentPlaybackState()` response body. Pure and
+ * defensive: never throws, regardless of how malformed/empty `playbackBody`
+ * is (no active device returns an empty 204 body from Spotify's API, which
+ * spotify-web-api-node surfaces as `body` being `''` or `undefined`).
+ * Exported for testing (test/spotifyNowPlaying.test.js).
+ * @param {object|string|undefined|null} playbackBody - the `.body` of a
+ *   getMyCurrentPlaybackState() response
+ * @returns {{track: (string|null), artist: (string|null), albumArt: (string|null),
+ *            isPlaying: boolean, device: (string|null), timestamp: number,
+ *            source: "poll"}}
+ */
+function _buildNowPlayingPayload(playbackBody) {
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    try {
+        if (!playbackBody || typeof playbackBody !== 'object' || !playbackBody.item) {
+            // Nothing playing (or malformed/empty body) -- safe minimal payload.
+            return { isPlaying: false, timestamp, source: 'poll' };
+        }
+
+        const item = playbackBody.item;
+        const track = (typeof item.name === 'string') ? item.name : null;
+        const artist = (item.artists && item.artists[0] && typeof item.artists[0].name === 'string')
+            ? item.artists[0].name
+            : null;
+        const albumArt = (item.album && Array.isArray(item.album.images) && item.album.images[0]
+            && typeof item.album.images[0].url === 'string')
+            ? item.album.images[0].url
+            : null;
+        const device = (playbackBody.device && typeof playbackBody.device.name === 'string')
+            ? playbackBody.device.name
+            : null;
+
+        return {
+            track,
+            artist,
+            albumArt,
+            isPlaying: !!playbackBody.is_playing,
+            device,
+            timestamp,
+            source: 'poll',
+        };
+    } catch {
+        // Never let an unexpected response shape throw here.
+        return { isPlaying: false, timestamp, source: 'poll' };
+    }
+}
+
+/**
+ * One poll tick: refreshes the Spotify access token, fetches current
+ * playback state, and publishes the retained now-playing payload. On any
+ * auth/API error, logs once per outage (not per tick), publishes a single
+ * `{isPlaying:false, reachable:false, ...}` payload for that outage, and
+ * keeps trying on the next tick -- it never stops the timer.
+ */
+function pollNowPlaying() {
+    spotifyApi.setAccessToken(process.env.spotifyRefreshToken);
+    spotifyApi.setCredentials({
+        'refreshToken': process.env.spotifyRefreshToken
+    });
+
+    spotifyApi.refreshAccessToken()
+        .then(function(data) {
+            spotifyApi.setAccessToken(data.body['access_token']);
+            return spotifyApi.getMyCurrentPlaybackState();
+        })
+        .then(function(playbackData) {
+            nowPlayingOutage = false;
+            const payload = _buildNowPlayingPayload(playbackData && playbackData.body);
+            mqttClient.publish(NOW_PLAYING_TOPIC, payload, { qos: 1, retain: true });
+        })
+        .catch(function(err) {
+            if (!nowPlayingOutage) {
+                nowPlayingOutage = true;
+                console.log('Spotify now-playing: polling error (suppressing repeats until recovery): %s', (err && err.message) || err);
+                mqttClient.publish(NOW_PLAYING_TOPIC, {
+                    isPlaying: false,
+                    reachable: false,
+                    timestamp: Math.floor(Date.now() / 1000),
+                    source: 'poll',
+                }, { qos: 1, retain: true });
+            }
+        });
+}
+
+/**
+ * Starts the 10s now-playing poller (gated behind SPOTIFY_NOW_PLAYING=1 in
+ * index.js -- see that module's comment for why it's opt-in). Idempotent:
+ * calling twice is a no-op. The timer is unref'd so it never keeps the
+ * process alive on its own, matching the pattern used by healthMonitor.js's
+ * timers.
+ */
+function startNowPlayingPublisher() {
+    if (nowPlayingTimer) {
+        return;
+    }
+
+    pollNowPlaying(); // don't wait a full 10s for the first publish
+
+    nowPlayingTimer = setInterval(pollNowPlaying, NOW_PLAYING_INTERVAL_MS);
+    if (typeof nowPlayingTimer.unref === 'function') {
+        nowPlayingTimer.unref();
+    }
+}
+
 function spotifySwitchPlay(deviceName, context_uri, debug_id) {
 
 	if (DRY_RUN) {
@@ -191,5 +314,7 @@ function spotifyStopPlay(deviceName, debug_id) {
 
 module.exports = {
 	spotifySwitchPlay,
-    spotifyStopPlay
+    spotifyStopPlay,
+    startNowPlayingPublisher,
+    _buildNowPlayingPayload,
 }
