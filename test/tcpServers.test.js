@@ -270,7 +270,45 @@ test('~-delimited commands are sent in order, spaced, without a power check', as
 
 // --- Status publishing ---
 
-test('publishes unreachable state when the connection drops', async () => {
+test('publishes unreachable state when the connection drops while a command is in-flight', async () => {
+    delete process.env.ITACH_PERSISTENT_CONNECTIONS;
+    let acceptedSocket = null;
+    await new Promise((resolve) => {
+        server = net.createServer((socket) => {
+            acceptedSocket = socket;
+            socket.on('error', () => {});
+            socket.resume(); // never responds -- the power query stays in-flight
+        });
+        server.listen(0, '127.0.0.1', resolve);
+    });
+    const port = server.address().port;
+
+    const device = {
+        id: 'plain', type: 'ip_control', address: '127.0.0.1', port,
+        commands: { on: 'ON\r', off: 'OFF\r' },
+        power_commands: { power_query: 'QUERY\r', power_response_on: 'ON\r', power_response_off: 'OFF\r' },
+    };
+    mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
+
+    // Deliberately not awaited -- the power-check query is in-flight
+    // (awaiting a response the fixture never sends) when the socket is
+    // destroyed below, which is the scenario this test targets.
+    tcpServers.send_ip_command(1, device, 'SOME_CMD', true);
+    // The client's send() can resolve/queue before the server's own
+    // 'connection' handler has necessarily run (they're independent callback
+    // chains -- under load, from other test files running in parallel, this
+    // otherwise-rare race becomes easy to hit), so wait for it explicitly
+    // rather than asserting immediately.
+    await waitUntil(() => acceptedSocket !== null);
+
+    published = []; // isolate from the command's own publishes (there are none here, but be explicit)
+    acceptedSocket.destroy();
+
+    await waitUntil(() => published.some((p) => p.payload.reachable === false));
+    assert.ok(published.some((p) => p.topic.endsWith('/state') && p.payload.reachable === false));
+});
+
+test('does NOT publish unreachable on a benign idle close (queue empty, nothing in-flight)', async () => {
     delete process.env.ITACH_PERSISTENT_CONNECTIONS;
     let acceptedSocket = null;
     await new Promise((resolve) => {
@@ -286,19 +324,21 @@ test('publishes unreachable state when the connection drops', async () => {
     const device = { id: 'plain', type: 'ip_control', address: '127.0.0.1', port, commands: {} };
     mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
 
+    // Fire-and-forget: send_ip_command's own promise resolves right after
+    // write, well before this close happens, so nothing is queued or
+    // in-flight -- mirrors a device closing an idle connection server-side.
     await tcpServers.send_ip_command(1, device, 'CMD_A', false);
-    // The client's fire-and-forget send() can resolve before the server's own
-    // 'connection' handler has necessarily run (they're independent callback
-    // chains -- under load, from other test files running in parallel, this
-    // otherwise-rare race becomes easy to hit), so wait for it explicitly
-    // rather than asserting immediately.
     await waitUntil(() => acceptedSocket !== null);
 
-    published = []; // isolate from the command's own publishes (there are none here, but be explicit)
+    published = [];
     acceptedSocket.destroy();
 
-    await waitUntil(() => published.some((p) => p.payload.reachable === false));
-    assert.ok(published.some((p) => p.topic.endsWith('/state') && p.payload.reachable === false));
+    // Give the close time to propagate; there should be no unreachable publish.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.ok(
+        !published.some((p) => p.payload.reachable === false),
+        `expected no unreachable publish for a benign close, got ${JSON.stringify(published)}`
+    );
 });
 
 // --- Legacy-flag routing ---

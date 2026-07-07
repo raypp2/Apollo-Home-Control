@@ -33,6 +33,20 @@
  *               .catch() can never produce an unhandled rejection, which
  *               matters because some commands (e.g. IR "fire-and-forget" sends)
  *               are launched without being awaited.
+ *
+ *               onStatusChange() reports REACHABILITY transitions, not raw
+ *               socket lifecycle (issue #13 follow-up). Some devices (e.g. a
+ *               PJLink projector) close an idle TCP connection server-side
+ *               after ~30s as normal protocol behavior -- that alone is NOT a
+ *               reachability change. A close/error is only treated as
+ *               'offline' when it happens on a connect failure, or while a
+ *               command was in-flight or still queued; a close on an
+ *               otherwise-idle connection (empty queue, nothing in-flight) is
+ *               benign and just reconnects lazily on the next send(), logged
+ *               (debounced to at most once/hour) rather than emitted as a
+ *               status transition. 'online' likewise only fires on an actual
+ *               offline->online transition, so a benign-close/lazy-reconnect
+ *               cycle never re-emits it.
  */
 
 const net = require('net');
@@ -46,6 +60,7 @@ const DEFAULT_BACKOFF_INITIAL_MS = 1000;  // reconnect backoff floor
 const DEFAULT_BACKOFF_MAX_MS = 30000;     // reconnect backoff ceiling
 const DEFAULT_KEEPALIVE_MS = 30000;       // TCP-level keepalive probe interval on idle sockets
 const MAX_PUMP_WAIT_MS = 250;             // poll-loop fallback cap while offline (bounded; real wakeups are event-driven)
+const BENIGN_CLOSE_LOG_INTERVAL_MS = 3600000; // at most once/hour per connection (see _logBenignClose)
 
 /**
  * One persistent TCP connection to a single device (host:port). Lazily
@@ -80,10 +95,13 @@ class DeviceConnection {
         this.keepAliveMs = keepAliveMs;
 
         this.socket = null;
-        this.status = 'offline'; // 'online' | 'offline'
+        this.status = 'offline'; // 'online' | 'offline' -- PUBLIC reachability status (see onStatusChange doc comment); only ever flips on a non-benign transition, decoupled from the private `_connected` bookkeeping flag below.
+        this._connected = false; // whether `this.socket` is a live, connected socket right now -- drives _pump()'s "do I need to (re)connect before sending" check. Independent of `this.status`: a benign idle close drops this to false (so the next send() lazily reconnects) without touching the public status.
         this.connecting = false;
         this.backoffMs = backoffInitialMs;
         this.reconnectTimer = null;
+        this._benignCloseCount = 0;    // closes-since-last-log counter for _logBenignClose()'s hourly debounce
+        this._benignCloseLoggedAt = 0;
 
         this.queue = [];       // { cmd, expectResponse, timeoutMs, resolve, queuedAt }
         this.pumping = false;
@@ -131,14 +149,19 @@ class DeviceConnection {
         });
     }
 
+    /**
+     * Sets the PUBLIC status and notifies listeners, but only on an actual
+     * transition (mirrors the pre-existing dedup). Callers are responsible
+     * for waking the pump loop themselves (via _wake()) when connection
+     * state actually changes -- this no longer does it implicitly, because
+     * a benign close intentionally does NOT call this (see onDown()) but
+     * still needs the pump loop woken so it can lazily reconnect.
+     */
     _setStatus(next) {
         if (this.status === next) {
             return;
         }
         this.status = next;
-        if (next === 'online') {
-            this._wake();
-        }
         for (const cb of this.statusListeners) {
             try {
                 cb(next);
@@ -187,6 +210,11 @@ class DeviceConnection {
             return;
         }
         this.connecting = true;
+        // Tracks, for THIS specific connect attempt, whether the socket ever
+        // reached a live 'connect' state -- distinguishes a connect FAILURE
+        // (never connected; always non-benign, see onDown()) from a close of
+        // an already-established connection (which may be benign).
+        let connectedSuccessfully = false;
 
         // Not unref'd: a caller may be actively awaiting a command over this
         // connection, and a hung connect needs to reliably time out and resolve
@@ -206,9 +234,16 @@ class DeviceConnection {
         socket.connect(this.port, this.host, () => {
             clearTimeout(connectTimer);
             this.connecting = false;
+            connectedSuccessfully = true;
+            this._connected = true;
             this.backoffMs = this.backoffInitialMs;
             console.log('DeviceConnection %s: connected', this.name);
             this._setStatus('online');
+            // Always wake the pump loop on a real connect, independent of
+            // whether _setStatus() actually emitted (it won't, if status was
+            // already 'online' from before a benign close) -- the loop is
+            // gated on _connected, not on the public status.
+            this._wake();
             this._pump();
         });
 
@@ -220,7 +255,23 @@ class DeviceConnection {
             if (this.socket === socket) {
                 this.socket = null;
             }
-            this._setStatus('offline');
+            this._connected = false;
+
+            // A close/error is BENIGN -- no 'offline' emission, just a
+            // debounced debug-ish log -- only when the socket had actually
+            // connected AND there was no queued/in-flight command riding on
+            // it. Anything else (never connected at all, i.e. a connect
+            // failure; or a close/error while a command was in-flight or
+            // still queued) is a real reachability transition.
+            const hadWork = this._activeFinish !== null || this.queue.length > 0;
+            const benign = connectedSuccessfully && !hadWork;
+
+            if (benign) {
+                this._logBenignClose();
+            } else {
+                this._setStatus('offline');
+            }
+
             if (this._activeFinish) {
                 const finish = this._activeFinish;
                 this._activeFinish = null;
@@ -245,6 +296,27 @@ class DeviceConnection {
         if (this._activeDataHandler) {
             this._activeDataHandler(data);
         }
+    }
+
+    /**
+     * Logs a benign idle close (server-side close/error with an empty queue
+     * and nothing in-flight -- e.g. a PJLink projector dropping an idle
+     * connection after ~30s) at most once per hour per connection, counting
+     * (not spamming) occurrences in between. This is intentionally NOT a
+     * status transition -- see onDown()'s `benign` branch.
+     */
+    _logBenignClose() {
+        this._benignCloseCount += 1;
+        const now = Date.now();
+        if (this._benignCloseLoggedAt && now - this._benignCloseLoggedAt < BENIGN_CLOSE_LOG_INTERVAL_MS) {
+            return;
+        }
+        this._benignCloseLoggedAt = now;
+        console.log(
+            'DeviceConnection %s: idle connection closed by peer (benign, %d occurrence(s) since last log)',
+            this.name, this._benignCloseCount
+        );
+        this._benignCloseCount = 0;
     }
 
     /**
@@ -300,7 +372,7 @@ class DeviceConnection {
                     continue;
                 }
 
-                if (this.status !== 'online') {
+                if (!this._connected) {
                     this._ensureSocket();
                     const msUntilStale = item.queuedAt + this.staleMs - Date.now();
                     await this._waitForWakeOrTimeout(Math.max(20, Math.min(msUntilStale, MAX_PUMP_WAIT_MS)));
@@ -355,6 +427,16 @@ class DeviceConnection {
                 resolve(result);
             };
 
+            // Set for EVERY command, not just expectResponse ones -- this is
+            // the onDown()/benign-close-detection signal that a write is
+            // genuinely outstanding right now. A fire-and-forget command is
+            // just as "in-flight" as a response-awaiting one for the brief
+            // window between socket.write() being issued and its callback
+            // firing; a close/error in that window is a real command
+            // failure, not an idle-connection benign close, even though
+            // nothing here waits on a framed response for it.
+            this._activeFinish = finish;
+
             if (item.expectResponse) {
                 this._activeDataHandler = (chunk) => {
                     buffer += chunk.toString();
@@ -363,7 +445,6 @@ class DeviceConnection {
                         finish(buffer.slice(0, idx));
                     }
                 };
-                this._activeFinish = finish;
                 // Not unref'd -- this is the timer that bounds and resolves the
                 // promise send() returned to the caller for THIS command; it must
                 // fire even if it's the only thing keeping an otherwise-idle
@@ -419,6 +500,7 @@ class DeviceConnection {
             this.socket = null;
         }
         this.status = 'offline';
+        this._connected = false;
         this._wake();
     }
 }

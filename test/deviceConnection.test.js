@@ -197,14 +197,17 @@ test('drops a queued command as stale (logged) and resolves null if it can never
 
 // --- Reconnect behavior ---
 
-test('reconnects after the server closes the socket, and keeps serving new commands', async () => {
+test('benign idle close (queue empty, nothing in-flight): no offline emitted; next send reconnects lazily with no duplicate online', async () => {
+    // Mirrors a PJLink projector closing an idle connection ~30s after
+    // responding to a command -- by the time the close arrives, the
+    // fire-and-forget command that triggered it has long since resolved
+    // client-side, so nothing is queued or in-flight.
     let acceptedConnections = 0;
     const { server, port } = await startFixtureServer((socket) => {
         acceptedConnections++;
         const isFirstConnection = acceptedConnections === 1;
         socket.on('data', () => {
             if (isFirstConnection) {
-                // Simulate a server-side drop right after the first command.
                 socket.end();
             }
         });
@@ -216,15 +219,47 @@ test('reconnects after the server closes the socket, and keeps serving new comma
     conn.onStatusChange((s) => statuses.push(s));
 
     await conn.send('CMD1');
-    await waitUntil(() => statuses.includes('offline'));
+    // The connection recovers on its own -- either via the next send() or
+    // the pre-existing proactive backoff-scheduled retry in
+    // _maybeScheduleReconnect() (both are legitimate; a status listener is
+    // registered here, same as production, so the proactive path is
+    // expected to win the race) -- but it must NOT have gone through an
+    // 'offline' status to get there.
     await waitUntil(() => acceptedConnections >= 2);
+    assert.ok(!statuses.includes('offline'), `expected no offline emission for a benign idle close, got ${JSON.stringify(statuses)}`);
 
     const response = await conn.send('CMD2');
-    assert.strictEqual(response, null); // fire-and-forget
-    await waitUntil(() => statuses.filter((s) => s === 'online').length >= 2);
+    assert.strictEqual(response, null); // fire-and-forget, served over the (already, or freshly) reconnected socket
+    await waitUntil(() => acceptedConnections >= 2);
 
-    assert.ok(acceptedConnections >= 2, 'expected the server to accept a second connection after closing the first');
-    assert.deepStrictEqual(statuses.slice(0, 3), ['online', 'offline', 'online']);
+    assert.ok(!statuses.includes('offline'), 'still expected no offline after CMD2');
+    assert.strictEqual(
+        statuses.filter((s) => s === 'online').length, 1,
+        `expected only the original online emission, no duplicate on reconnect, got ${JSON.stringify(statuses)}`
+    );
+});
+
+test('close while a command is in-flight (awaiting a response): offline IS emitted', async () => {
+    // The server accepts, then destroys the socket the moment it sees data
+    // -- never responds -- so the client's expectResponse:true send is still
+    // in-flight (its _activeFinish resolver is set) when the close arrives.
+    const { port } = await startFixtureServer((socket) => {
+        socket.on('data', () => {
+            socket.destroy();
+        });
+    });
+
+    const statuses = [];
+    const conn = trackConn(new DeviceConnection({
+        host: '127.0.0.1', port, responseTimeoutMs: 2000, backoffInitialMs: 15, backoffMaxMs: 40,
+    }));
+    conn.onStatusChange((s) => statuses.push(s));
+
+    const response = await conn.send('QUERY', { expectResponse: true });
+    assert.strictEqual(response, null);
+    await waitUntil(() => statuses.includes('offline'));
+
+    assert.deepStrictEqual(statuses, ['online', 'offline']);
 });
 
 test('connect failure sets status offline and never produces an unhandled promise rejection', async () => {
@@ -256,7 +291,15 @@ test('connect failure sets status offline and never produces an unhandled promis
 
     // Deliberately not awaited here -- this is exactly the "fire and forget,
     // never .catch()'d" pattern the no-rejection guarantee protects against.
-    conn.send('CMD');
+    // expectResponse:true so the command stays genuinely in-flight (its
+    // _activeFinish resolver stays set) until the close/error resolves it --
+    // a fire-and-forget send's local socket.write() callback can otherwise
+    // fire (clearing in-flight state) before the peer's immediate destroy()
+    // is even noticed client-side, since a local write only confirms the
+    // kernel accepted the bytes, not that the peer received them. That would
+    // make this specific accept-then-destroy race read as a benign close
+    // (see the module doc comment) instead of the real failure it is.
+    conn.send('CMD', { expectResponse: true });
 
     try {
         // First transition: connects, is immediately dropped -> offline.
