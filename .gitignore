@@ -33,3 +33,6 @@ _OLD/*
 # OS Files
 .DS_Store
 .vscode/*
+
+# Claude Code session log — private by default (verbatim prompts)
+/session-log/

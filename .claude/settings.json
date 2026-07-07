@@ -5,6 +5,16 @@
         "matcher": "Edit|Write",
         "command": "npm run lint"
       }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node _scripts/usage-snapshot.mjs --auto" }] },
+      { "hooks": [{ "type": "command", "command": "node _scripts/archive-session-log.mjs --auto" }] },
+      { "hooks": [{ "type": "command", "command": "node _scripts/check-log-coverage.mjs --auto" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "node _scripts/usage-snapshot.mjs --auto" }] },
+      { "hooks": [{ "type": "command", "command": "node _scripts/archive-session-log.mjs --auto" }] },
+      { "hooks": [{ "type": "command", "command": "node _scripts/check-log-coverage.mjs --auto" }] }
     ]
   }
 }

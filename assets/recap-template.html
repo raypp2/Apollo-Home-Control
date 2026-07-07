@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{PROJECT_NAME}} — Recap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --page-bg: #E4DDCF; --card-bg: #F2EDE3; --card-bg-alt: #ECE4D5;
+  --ink: #26221D; --body: #3A332C; --body-2: #4A4038;
+  --muted: #8C7B66; --muted-2: #A0917E;
+  --line: rgba(43,38,32,.12); --line-soft: rgba(43,38,32,.08); --line-strong: rgba(43,38,32,.18);
+  --accent: #BE5B34; --accent-2: #C9683E; --accent-3: #B14E2B;
+  --eyebrow: #B0885E;
+  --masthead-bg: #26221D; --masthead-text: #EDE6D8; --masthead-muted: #9C9385;
+  --code-bg: rgba(43,38,32,.09); --code-text: #4A4038;
+  --cat-amber: #B58A3C; --cat-blue: #3A6EA5; --cat-green: #3E7C55; --cat-purple: #6D4FC4; --cat-rose: #A8503F; --cat-gray: #6E6154; --cat-teal: #2E7D7B; --cat-plum: #9A5A86;
+  --ws-1: #3E6FB0; --ws-2: #3E8B62; --ws-3: #7D5FCB; --ws-4: #C08A3E; --ws-5: #C0524A; --ws-6: #6E655A;
+  --ms-bg: #F7EFDC; --ms-border: rgba(181,138,60,.45); --ms-title: #4A3A1E; --ms-desc: #8A6D3C; --ms-head: #B58A3C;
+  --cap-bg: #EFEBFB; --cap-border: rgba(109,79,196,.3); --cap-title: #5B43B5; --cap-desc: #6E62A0; --cap-head: #6D4FC4;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-body); background: var(--page-bg); color: var(--body); line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(43,38,32,.2); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.page { max-width: 950px; margin: 0 auto; background: var(--card-bg); box-shadow: 0 30px 80px -40px rgba(43,38,32,.6); min-height: 100vh; }
+
+/* -- Masthead -- */
+.masthead { padding: clamp(26px,6vw,42px) clamp(20px,5vw,44px) clamp(24px,5vw,34px); background: var(--masthead-bg); color: var(--masthead-text); }
+.masthead-eyebrow { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; color: var(--accent-2); }
+.masthead-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); flex: none; }
+.masthead h1 { font-family: var(--font-mono); font-size: clamp(26px,7vw,38px); font-weight: 700; letter-spacing: -0.02em; margin-top: 14px; line-height: 1.05; text-wrap: balance; }
+.masthead .range, .masthead .gen { font-family: var(--font-mono); font-size: 12.5px; color: var(--masthead-muted); margin-top: 4px; }
+.masthead .range { margin-top: 10px; }
+.share-badge { display: inline-block; margin-top: 12px; padding: 5px 12px; border-radius: 20px; background: var(--accent-2); color: var(--masthead-bg); font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em; }
+
+/* -- Stat row -- */
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); background: #E7DFD0; }
+.stat { padding: 18px clamp(14px,4vw,24px); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.stat-value { font-family: var(--font-mono); font-size: clamp(20px,5vw,24px); font-weight: 700; color: var(--accent); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.stat-label { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-top: 5px; }
+
+/* -- Sections -- */
+section.recap-section { padding: clamp(28px,6vw,42px) clamp(20px,5vw,44px); border-top: 1px solid var(--line); }
+section.recap-section.ai-section { background: var(--card-bg-alt); }
+.section-eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; color: var(--eyebrow); }
+.section-eyebrow.ai { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+.section-eyebrow.ai .ai-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.section-eyebrow.ai span.label { font-size: 10px; text-transform: uppercase; }
+h2 { font-family: var(--font-mono); font-size: clamp(18px,4.5vw,22px); font-weight: 700; margin-top: 6px; }
+.section-sub { font-size: 13px; color: var(--muted); margin: 6px 0 22px; }
+
+/* -- Tables (cost & time) -- */
+.cost-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 30px; }
+.cost-col-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+.cost-model-row { margin-bottom: 11px; }
+.cost-model-row:last-child { margin-bottom: 0; }
+.cost-model-head { display: grid; grid-template-columns: 1fr auto 40px; gap: 8px; font-family: var(--font-mono); font-size: 11.5px; margin-bottom: 5px; }
+.cost-model-name { color: var(--body-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cost-model-cost { font-variant-numeric: tabular-nums; }
+.cost-model-pct { text-align: right; color: var(--accent); font-variant-numeric: tabular-nums; }
+.cost-model-track { height: 4px; background: var(--line-soft); border-radius: 4px; overflow: hidden; }
+.cost-model-fill { height: 100%; background: var(--accent); }
+.cost-window-row { display: grid; grid-template-columns: 1fr auto; font-family: var(--font-mono); font-size: 12.5px; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
+.cost-window-row:last-child { border-bottom: none; }
+.cost-window-name { color: var(--body-2); }
+.cost-window-cost { font-weight: 500; font-variant-numeric: tabular-nums; }
+.cost-footnote { font-family: var(--font-mono); font-size: 10px; color: var(--muted-2); margin-top: 18px; line-height: 1.5; }
+
+/* -- Daily activity bars -- */
+.cost-chart-wrap { overflow-x: auto; padding-bottom: 4px; }
+.cost-chart { display: flex; align-items: flex-end; gap: clamp(4px,1.4vw,10px); height: 150px; min-width: min-content; }
+.cost-bar-wrap {
+  flex: 1; min-width: 22px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+  height: 100%; cursor: pointer; text-decoration: none; color: inherit;
+}
+.cost-bar-wrap:hover { opacity: .82; }
+.cost-bar-cost { font-family: var(--font-mono); font-size: 9px; color: var(--muted-2); margin-bottom: 5px; white-space: nowrap; }
+.cost-bar { width: 100%; border-radius: 4px 4px 0 0; background: linear-gradient(var(--accent-2), var(--accent-3)); }
+.cost-bar.estimated-bar { background: repeating-linear-gradient(45deg, var(--accent-2), var(--accent-2) 3px, var(--accent-3) 3px, var(--accent-3) 6px); opacity: .75; }
+.cost-bar-label { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); margin-top: 7px; }
+.date-axis { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: var(--muted-2); margin-top: 12px; }
+.chart-legend-note { font-family: var(--font-mono); font-size: 10px; color: var(--muted-2); margin-top: 6px; }
+
+/* -- Workstreams: gantt overview + accordion -- */
+.hover-info { font-size: 13px; color: var(--body-2); margin: 6px 0 20px; font-family: var(--font-mono); min-height: 18px; }
+.hover-info strong { font-weight: 700; }
+.hover-info .view-link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.ws-gantt-wrap { overflow-x: auto; padding-bottom: 6px; }
+.ws-gantt-inner { min-width: 560px; position: relative; }
+.ws-gantt-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.ws-gantt-label { width: 160px; flex: none; display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.ws-gantt-pct { font-family: var(--font-mono); font-size: 10px; font-weight: 700; width: 26px; text-align: right; }
+.ws-gantt-name { font-family: var(--font-mono); font-size: 11px; color: var(--body-2); text-align: right; white-space: nowrap; }
+.ws-gantt-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.ws-gantt-track { flex: 1; height: 20px; background: var(--line-soft); border-radius: 4px; display: flex; overflow: hidden; }
+.ws-gantt-cell { flex: 1; height: 100%; }
+.ws-gantt-hitlayer { position: absolute; top: 0; bottom: 0; left: 172px; right: 0; display: flex; }
+.ws-gantt-hit { flex: 1; position: relative; text-decoration: none; cursor: pointer; }
+.ws-gantt-hit.hover::before { content: ''; position: absolute; inset: 0; background: rgba(43,38,32,.09); border-radius: 4px; }
+.ws-gantt-axis { display: flex; font-family: var(--font-mono); font-size: 10px; color: var(--muted-2); margin: 8px 0 0; padding-left: 172px; }
+.ws-gantt-axis span { flex: 1; text-align: center; }
+.ws-accordion { margin-top: 22px; border-top: 1px solid var(--line); }
+details.ws-item { border-bottom: 1px solid var(--line); }
+details.ws-item > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 11px; padding: 15px 10px; margin: 0 -10px; border-radius: 8px; transition: background-color .15s ease; }
+details.ws-item > summary:hover { background: rgba(43,38,32,.05); }
+details.ws-item > summary::-webkit-details-marker { display: none; }
+.ws-item-swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.ws-item-name { font-weight: 600; font-size: 15px; flex: 1; }
+.ws-item-cost { font-family: var(--font-mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ws-item-caret { font-family: var(--font-mono); font-size: 13px; color: var(--eyebrow); transition: transform .2s; width: 12px; text-align: center; }
+details.ws-item[open] .ws-item-caret { transform: rotate(90deg); }
+.ws-item-body { padding: 0 2px 18px; }
+.ws-item-blurb { font-size: 13.5px; line-height: 1.6; color: var(--body-2); margin: 0 0 10px; }
+.ws-item-stat { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent); font-weight: 500; }
+
+/* -- Dual timeline --
+   .tl-heads and every .tl-row are separate grid containers (not CSS Subgrid),
+   so their column tracks only align because both declare the identical
+   `minmax(0,1fr) 92px minmax(0,1fr)` template against the same available
+   width — the middle track is a fixed px, not `auto`, specifically so a
+   header with no middle content and a row with a date badge (or a gap row
+   with just a dashed dot) can't compute different middle-track widths and
+   throw the two side columns out of alignment with each other. Keep this
+   template identical across .tl-heads and .tl-row if either ever changes. */
+.tl-heads { display: grid; grid-template-columns: minmax(0,1fr) 92px minmax(0,1fr); gap: 18px; margin-bottom: 12px; }
+.tl-header-left { text-align: right; font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ms-head); font-weight: 700; }
+.tl-header-right { text-align: left; font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--cap-head); font-weight: 700; }
+.tl-mobile-legend { display: none; }
+.tl-wrap { position: relative; }
+.tl-rail { position: absolute; left: 50%; transform: translateX(-50%); top: 10px; bottom: 10px; width: 2px; background: var(--line-strong); }
+.tl-row { display: grid; grid-template-columns: minmax(0,1fr) 92px minmax(0,1fr); gap: 18px; align-items: center; margin-bottom: 16px; }
+.tl-row.tl-gap-row { margin: 4px 0 14px; }
+/* min-width: 0 on the grid items (.tl-left/.tl-right) AND the flex item they
+   contain (.tl-card) — without it, a card's automatic minimum width defaults
+   to its title/description's content size, which can exceed the grid
+   column's actual computed width and overflow the viewport instead of
+   shrinking to fit, even though the column track itself is minmax(0,1fr). */
+.tl-left { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; min-width: 0; }
+.tl-right { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-start; min-width: 0; }
+.tl-pill-cell { justify-self: center; position: relative; z-index: 2; }
+.tl-date-badge { display: inline-block; background: var(--ink); color: var(--masthead-text); font-family: var(--font-mono); font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 20px; white-space: nowrap; }
+.tl-gap-dot { display: block; width: 12px; height: 12px; border-radius: 50%; border: 2px dashed var(--line-strong); background: var(--card-bg); }
+.tl-gap-l, .tl-gap-r { font-family: var(--font-mono); font-size: 11px; color: var(--muted-2); font-style: italic; }
+.tl-gap-l { text-align: right; }
+.tl-gap-r { text-align: left; }
+.tl-card { width: min(380px, 100%); min-width: 0; border-radius: 12px; padding: 13px 15px; transition: box-shadow .15s ease, border-color .15s ease, transform .15s ease; }
+.tl-ms-card { background: var(--ms-bg); border: 1px solid var(--ms-border); }
+.tl-ms-card:hover { border-color: var(--ms-head); box-shadow: 0 4px 14px -6px rgba(181,138,60,.4); transform: translateY(-1px); }
+.tl-ms-title { font-weight: 700; font-size: 14.5px; line-height: 1.25; color: var(--ms-title); }
+.tl-ms-desc { font-size: 12.5px; color: var(--ms-desc); margin-top: 4px; line-height: 1.4; }
+.tl-cap-card { background: var(--cap-bg); border: 1px solid var(--cap-border); }
+.tl-cap-card:hover { border-color: var(--cap-head); box-shadow: 0 4px 14px -6px rgba(109,79,196,.35); transform: translateY(-1px); }
+.tl-cap-title { font-weight: 700; font-size: 14px; line-height: 1.25; color: var(--cap-title); }
+.tl-cap-desc { font-size: 12.5px; color: var(--cap-desc); margin-top: 4px; line-height: 1.4; }
+@media (max-width: 560px) {
+  .tl-heads, .tl-rail { display: none !important; }
+  /* The two-column header is the only place "Milestone"/"Capability" are
+     named in text — hiding it outright would leave color as the only
+     differentiator once rows stack into one column. This compact legend
+     keeps the same swatch colors as the header text (--ms-head/--cap-head)
+     so the mapping survives the breakpoint, same pattern Workstreams and
+     Findings already use (a swatch/chip on every item, not a separate
+     legend that can scroll out of view). */
+  .tl-mobile-legend { display: flex; gap: 18px; margin-bottom: 14px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); }
+  .tl-legend-item { display: flex; align-items: center; gap: 6px; }
+  .tl-legend-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .tl-legend-ms { background: var(--ms-head); }
+  .tl-legend-cap { background: var(--cap-head); }
+  .tl-row { grid-template-columns: 1fr !important; align-items: stretch !important; gap: 8px !important; margin-bottom: 24px !important; }
+  .tl-pill-cell { order: -1; justify-self: start !important; }
+  .tl-left, .tl-right { justify-content: flex-start !important; }
+  .tl-card { width: 100% !important; }
+  .tl-gap-l { display: none !important; }
+}
+
+/* -- How you use Claude (patterns) -- */
+.narrative { font-size: 14.5px; color: var(--body); line-height: 1.65; }
+.pattern-block {
+  background: #FBF6EC; border: 1px solid var(--line-strong); border-radius: 14px;
+  padding: clamp(18px,4vw,24px); margin-bottom: 18px;
+}
+.pattern-block:last-child { margin-bottom: 0; }
+.pattern-block p { font-size: 14.5px; line-height: 1.62; color: var(--body); margin: 0; }
+.pattern-head-row { display: flex; align-items: flex-start; gap: 12px; flex-wrap: nowrap; margin-bottom: 10px; }
+.pattern-head { font-size: clamp(16px,3.6vw,18px); font-weight: 700; letter-spacing: -0.01em; color: var(--ink); flex: 1 1 auto; }
+.pattern-tag {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; padding: 4px 9px; border-radius: 5px; white-space: nowrap; flex: none;
+}
+.tag-dynamics { background: var(--cap-bg); color: var(--cat-purple); }
+.tag-forward { background: #E3EEE8; color: var(--cat-green); }
+.tag-optimize { background: #F5E5E1; color: var(--cat-rose); }
+.pattern-evidence { font-size: .85rem; color: var(--muted); margin-bottom: 8px; }
+.pattern-evidence strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.pattern-quote {
+  border-left: 3px solid var(--line-strong); padding: 2px 0 2px 16px; margin: 16px 0 0;
+  font-size: 14.5px; color: var(--body-2); font-style: italic;
+}
+.pattern-quote .q-ref { display: block; font-style: normal; font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+/* -- Findings, ranked by value -- */
+.finding { background: #FBF6EC; border: 1px solid var(--line-strong); border-radius: 14px; padding: clamp(18px,4vw,24px); margin-bottom: 18px; }
+.finding:last-child { margin-bottom: 0; }
+.finding.finding-top { background: linear-gradient(150deg, #F7EBE2, #F4E4D6); border-color: rgba(190,91,52,.4); }
+.finding-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: nowrap; margin-bottom: 14px; }
+.finding-num { font-family: var(--font-mono); font-size: 15px; font-weight: 700; }
+.finding-title { font-size: clamp(16px,3.6vw,18px); font-weight: 700; letter-spacing: -0.01em; flex: 1 1 auto; color: var(--ink); }
+.finding-tag { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; padding: 4px 9px; border-radius: 5px; white-space: nowrap; text-transform: uppercase; }
+.finding-tag.solid { background: var(--accent); color: #F6EFE4; }
+.finding-tag.muted { background: var(--line-soft); color: var(--cat-gray); }
+.finding p { font-size: 14.5px; line-height: 1.62; color: var(--body); margin: 0; }
+.finding-rule { border-top: 1px solid var(--line); margin: 16px 0 14px; }
+.finding-fix { font-size: 14px; line-height: 1.62; color: var(--body); margin: 0; }
+.finding-fix b { font-weight: 700; }
+.finding blockquote { border-left: 3px solid var(--line-strong); padding: 2px 0 2px 16px; margin: 16px 0; }
+.finding blockquote .fq-text { font-size: 14.5px; font-style: italic; line-height: 1.55; color: var(--body-2); }
+.finding blockquote .fq-ref { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 8px; }
+.finding code, .narrative code, .cost-footnote code { background: var(--code-bg); font-family: var(--font-mono); font-size: 12.5px; padding: 1px 5px; border-radius: 4px; color: var(--code-text); }
+
+/* -- If you only do three things this week (capstone) -- */
+.capstone-wrap { margin-top: clamp(28px,6vw,42px); padding-top: clamp(28px,6vw,42px); border-top: 1px solid var(--line); }
+.capstone-table { background: #F7F1E6; border: 1px solid var(--line-strong); border-radius: 14px; overflow: hidden; }
+.capstone-header-row { display: flex; gap: 14px; padding: 13px 18px; background: #E7DFD0; font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.capstone-header-row .col-n { width: 20px; flex: none; }
+.capstone-header-row .col-body { flex: 1; display: flex; flex-wrap: wrap; gap: 6px 24px; }
+.capstone-header-row .col-action { flex: 2 1 220px; }
+.capstone-header-row .col-payoff { flex: 1 1 150px; }
+.capstone-row { display: flex; gap: 14px; padding: 16px 18px; border-top: 1px solid var(--line); }
+.capstone-row .col-n { width: 20px; flex: none; font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--accent); }
+.capstone-row .col-body { flex: 1; display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.capstone-row .col-action { flex: 2 1 220px; font-size: 14px; line-height: 1.5; color: var(--ink); }
+.capstone-row .col-payoff { flex: 1 1 150px; font-size: 13.5px; line-height: 1.5; color: var(--cat-gray); }
+
+.findings-more { font-size: 13px; color: var(--muted); margin-top: 20px; line-height: 1.6; max-width: 70ch; }
+.findings-more code { display: block; margin-top: 10px; background: var(--code-bg); color: var(--code-text); font-family: var(--font-mono); font-size: 12px; padding: 10px 13px; border-radius: 6px; line-height: 1.5; }
+
+.empty-note { color: var(--muted); font-size: 14px; }
+
+/* -- Footer -- */
+.recap-footer { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-2); margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.recap-footer .footer-head { font-size: 10px; letter-spacing: .1em; color: var(--eyebrow); margin-bottom: 9px; }
+.recap-footer .footer-methodology { columns: 2; column-gap: 44px; }
+.recap-footer .footer-methodology .footer-head { column-span: all; }
+.recap-footer p { margin: 0 0 10px; line-height: 1.6; break-inside: avoid; }
+.recap-footer p:last-child { margin-bottom: 0; }
+.recap-footer strong { color: var(--body-2); font-weight: 600; }
+.recap-footer em { font-style: italic; color: var(--body-2); }
+.recap-footer code { background: var(--code-bg); padding: 1px 4px; border-radius: 3px; color: var(--code-text); }
+.recap-footer a { color: var(--accent); text-decoration: none; }
+.recap-footer a:hover { text-decoration: underline; }
+.recap-footer .footer-about { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+@media (max-width: 680px) { .recap-footer .footer-methodology { columns: 1; } }
+
+/* -- Side panel (JS slide-out) -- */
+.panel-overlay { display: none; position: fixed; inset: 0; z-index: 40; background: rgba(38,34,29,.45); }
+.panel-overlay.open { display: block; animation: fadeBg .2s ease; }
+.side-panel {
+  position: fixed; top: 0; right: -100%; bottom: 0; z-index: 41; width: min(440px, 100%);
+  background: var(--card-bg); display: flex; flex-direction: column;
+  box-shadow: -24px 0 60px -24px rgba(38,34,29,.6); transition: right .25s ease; overflow: hidden;
+}
+.side-panel.open { right: 0; }
+.panel-header { padding: 22px 24px; background: var(--masthead-bg); color: var(--masthead-text); display: flex; justify-content: space-between; align-items: flex-start; flex: none; }
+.panel-date { font-family: var(--font-mono); font-size: 24px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+.panel-stats { display: flex; align-items: baseline; gap: 9px; margin-top: 7px; font-family: var(--font-mono); }
+.panel-cost { font-size: 15px; font-weight: 600; color: var(--accent-2); }
+.panel-meta { font-size: 11px; color: var(--masthead-muted); }
+.panel-close {
+  border: 1px solid rgba(237,230,216,.3); background: none; color: var(--masthead-text); width: 32px; height: 32px;
+  border-radius: 6px; font-size: 16px; cursor: pointer; line-height: 1; flex: none;
+}
+.panel-close:hover { background: rgba(237,230,216,.1); }
+.panel-ws-mix { padding: 16px 24px; border-bottom: 1px solid var(--line); flex: none; }
+.panel-ws-mix-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 9px; }
+.panel-ws-mix-bar { display: flex; height: 14px; border-radius: 5px; overflow: hidden; }
+.panel-ws-mix-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 9px; }
+.panel-ws-mix-item { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--body-2); }
+.panel-ws-mix-swatch { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+.panel-body { padding: 8px 24px 24px; overflow-y: auto; flex: 1; }
+.entry-item { display: flex; gap: 10px; padding: 13px 0; border-bottom: 1px solid var(--line-soft); }
+.entry-item:last-child { border-bottom: none; }
+.entry-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; margin-top: 5px; background: var(--muted-2); }
+.entry-text { flex: 1; }
+.entry-desc { font-size: 13.5px; font-weight: 500; line-height: 1.45; color: var(--ink); }
+.entry-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.entry-tag { font-family: var(--font-mono); font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--line-soft); margin-right: 6px; }
+
+@keyframes fadeBg { from { opacity: 0; } to { opacity: 1; } }
+
+/* -- No-JS panel via :target (progressive-enhancement fallback) -- */
+.day-panel-target { display: none; position: fixed; inset: 0; z-index: 39; }
+.day-panel-target:target { display: flex; justify-content: flex-end; }
+.js-on .day-panel-target, .js-on .day-panel-target:target { display: none !important; }
+.day-panel-target .panel-bg { position: fixed; inset: 0; background: rgba(38,34,29,.45); }
+.day-panel-target .panel-fg { position: relative; width: min(440px, 100%); background: var(--card-bg); display: flex; flex-direction: column; z-index: 1; box-shadow: -24px 0 60px -24px rgba(38,34,29,.6); }
+.panel-close-link {
+  width: 32px; height: 32px; border: 1px solid rgba(237,230,216,.3); flex: none;
+  border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px;
+  color: var(--masthead-text); text-decoration: none;
+}
+.panel-close-link:hover { background: rgba(237,230,216,.1); }
+
+/* ========== MOBILE ========== */
+@media (max-width: 680px) {
+  .side-panel { width: 100%; }
+  .day-panel-target .panel-fg { width: 100%; }
+  .cost-bar-wrap { min-width: 24px; }
+}
+</style>
+</head>
+<body>
+<!-- Auto-generated by scripts/generate-recap.mjs — do not hand-edit.
+     Regenerate: node scripts/generate-recap.mjs -->
+<div class="page" id="page">
+
+<!-- ========== MASTHEAD ========== -->
+<div class="masthead">
+  <div class="masthead-eyebrow"><span class="masthead-dot"></span>/showcase-log Project Recap</div>
+  <h1>{{PROJECT_NAME}}</h1>
+  <div class="range">{{DATE_RANGE}}</div>
+  <div class="gen">Generated {{GENERATED_DATE}}</div>
+  {{SHARE_BADGE}}
+</div>
+
+<!-- ========== STAT ROW ========== -->
+<div class="stat-row">
+  {{PRIMARY_STAT}}
+  <div class="stat"><div class="stat-value">{{ENTRY_COUNT}}</div><div class="stat-label">Requests</div></div>
+  <div class="stat"><div class="stat-value">{{DAY_COUNT}}</div><div class="stat-label">Active days</div></div>
+  <div class="stat"><div class="stat-value">{{HOURS_ESTIMATE}}</div><div class="stat-label">Est. worked</div></div>
+</div>
+
+<!-- ========== DAILY ACTIVITY ========== -->
+<!-- Daily activity and Cost & time are two separate <section> elements (kept apart so
+     each retains its own layout/heading) but share one data-section value — the section
+     picker treats them as a single user-facing choice, never selectable independently, so
+     removing/keeping "the" section by this attribute removes/keeps both together. -->
+<section class="recap-section" data-section="daily-activity-cost">
+  <div class="section-eyebrow">// daily_activity</div>
+  <h2>Daily activity</h2>
+  <p class="hover-info" id="cost-hover-info">{{CHART_HOVER_DEFAULT}}</p>
+  <div class="cost-chart-wrap">
+    <div class="cost-chart" id="cost-chart">
+      {{DAILY_BARS}}
+    </div>
+  </div>
+  {{DAILY_AXIS}}
+  {{DAILY_LEGEND}}
+</section>
+
+<!-- ========== COST & TIME ========== -->
+<section class="recap-section" data-section="daily-activity-cost">
+  <div class="section-eyebrow">// cost_and_time</div>
+  <h2>{{COST_SECTION_HEADING}}</h2>
+  <div class="cost-tables" style="margin-top:20px;">
+    <div>
+      <div class="cost-col-label">By model</div>
+      {{COST_BY_MODEL_TABLE}}
+    </div>
+    <div>
+      <div class="cost-col-label">By window</div>
+      {{COST_BY_WINDOW_TABLE}}
+    </div>
+  </div>
+</section>
+
+<!-- ========== WORKSTREAMS (AI) ========== -->
+<section class="recap-section ai-section" data-section="workstreams">
+  <div class="section-eyebrow ai"><span class="ai-dot"></span><span class="label">Drafted from the log</span></div>
+  <h2>Workstreams</h2>
+  {{WORKSTREAMS_SECTION}}
+</section>
+
+<!-- ========== MILESTONES & CAPABILITIES TIMELINE (AI) ========== -->
+<section class="recap-section" data-section="timeline">
+  <div class="section-eyebrow ai"><span class="ai-dot"></span><span class="label">Drafted from the log</span></div>
+  <h2>Milestones &amp; capabilities</h2>
+  <p class="section-sub">What you declared shipped, paired chronologically with what the project could newly do.</p>
+  {{TIMELINE_SECTION}}
+</section>
+
+<!-- ========== HOW YOU USE CLAUDE (AI) ========== -->
+<section class="recap-section ai-section" data-section="patterns">
+  <div class="section-eyebrow ai"><span class="ai-dot"></span><span class="label">Drafted from the log</span></div>
+  <h2>How you use Claude</h2>
+  <p class="section-sub">Recurring patterns in how you prompt and collaborate, drawn straight from the log.</p>
+  <div class="narrative">
+    {{PATTERNS_SECTION}}
+  </div>
+</section>
+
+<!-- ========== FINDINGS, RANKED BY VALUE (AI) — includes the closing capstone ========== -->
+<section class="recap-section" data-section="findings">
+  <div class="section-eyebrow ai"><span class="ai-dot"></span><span class="label">Drafted from the log</span></div>
+  <h2>Findings, ranked by value</h2>
+  <p class="section-sub">Most impactful first. Each has a one-line title so you can scan before you read.</p>
+  {{FINDINGS_SECTION}}
+
+  <p class="findings-more">These are the highest-value findings, not the full list. Want more — or a deeper cut on one angle? Ask Claude in this project:<code>Give me more findings from my session-log beyond these — including how I could work with Claude better, not just project fixes.</code></p>
+
+  <div class="capstone-wrap">
+    <div class="section-eyebrow">// this_week</div>
+    <h2>If you only do three things this week</h2>
+    <div style="margin-top:20px;">
+      {{THREE_THINGS_SECTION}}
+    </div>
+  </div>
+</section>
+
+<footer class="recap-footer" style="padding: 28px clamp(20px,5vw,44px) clamp(28px,6vw,42px);">
+  <div class="footer-methodology">
+    <div class="footer-head">// methodology</div>
+    <p><strong>Data basis.</strong> Everything here derives from <code>session-log/</code> — a structured log Claude appends to after each request (verbatim prompt, actions, decisions, model) — plus <code>usage/</code>, a permanent snapshot of the exact token usage Claude Code records on every assistant message. Claude Code keeps those records locally and deletes them after ~30 days; this skill copies them into the repo first, so the cost figures are harvested actuals, not estimates.</p>
+    {{COST_METHODOLOGY_NOTE}}
+    <p><strong>Hours.</strong> "Est. worked" sums each logged request's start-to-end span, from real timestamps recorded at the top and bottom of the request. It counts time inside logged requests only — not idle gaps between them, and not work done outside Claude.</p>
+    <p><strong>Requests &amp; active days.</strong> One request = one log entry; active days = distinct calendar dates with at least one entry.</p>
+    <p><strong>AI-written sections</strong> (workstreams, timeline, patterns, findings), where included, are Claude's interpretation of the log — not computed metrics. Their classifications and rankings reflect model judgment and are worth a sanity check.</p>
+  </div>
+  <div class="footer-about">
+    <div class="footer-head">// about this skill</div>
+    <p><strong>showcase-log</strong> turns a project's disappearing Claude Code history into a permanent, structured log — and turns that log into cost reports and interactive recaps like this one. It's the always-on data layer of the <em>showcase</em> skill family.</p>
+    <p>Built by Ray · <a href="https://github.com/raypp2/showcase-skills/">github.com/raypp2/showcase-skills</a></p>
+  </div>
+</footer>
+
+</div><!-- .page -->
+
+<!-- JS-powered Side Panel -->
+<div class="panel-overlay" id="panel-overlay"></div>
+<div class="side-panel" id="side-panel">
+  <div class="panel-header">
+    <div>
+      <div class="panel-date" id="panel-date"></div>
+      <div class="panel-stats"><span class="panel-cost" id="panel-cost"></span><span class="panel-meta" id="panel-meta"></span></div>
+    </div>
+    <button class="panel-close" id="panel-close">&times;</button>
+  </div>
+  <div class="panel-ws-mix" id="panel-ws-mix" style="display:none;">
+    <div class="panel-ws-mix-label">Workstream mix</div>
+    <div class="panel-ws-mix-bar" id="panel-ws-mix-bar"></div>
+    <div class="panel-ws-mix-legend" id="panel-ws-mix-legend"></div>
+  </div>
+  <div class="panel-body" id="panel-body"></div>
+</div>
+
+<!-- ========== PRE-RENDERED DAY PANELS (no-JS :target) ========== -->
+{{DAY_PANELS}}
+
+<script>
+// ============ ENTRY DATA ============
+{{ENTRIES_JS}}
+
+// ============ DAILY DATA ============
+{{DAILY_DATA_JS}}
+var SHARE_MODE = {{SHARE_MODE}}; // true on the shareable variant — dailyData has no cost field at all in that case
+
+// ============ DAY LABELS ============
+{{TOTAL_DAYS_JS}}
+var dayLabels = []; // display only: "Jun 10" — never used as a lookup key
+var dayKeys = [];    // lookup key: "2026-06-10" — year-qualified so multi-year
+                      // projects can't collide (two Junes both showing "Jun 10")
+{{START_DATE_JS}}
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+for (var d = 0; d < totalDays; d++) {
+  var dt = new Date(startDate.getTime() + d * 86400000);
+  var m = dt.toLocaleDateString('en-US', { month: 'short' });
+  dayLabels.push(m + ' ' + dt.getDate());
+  dayKeys.push(dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate()));
+}
+
+// Suppress the :target no-JS fallback panels now that the slide-out can take over.
+document.querySelectorAll('#page').forEach(function (el) { el.classList.add('js-on'); });
+document.body.classList.add('js-on');
+
+// ============ COST BAR EVENTS ============
+var chartEl = document.getElementById('cost-chart');
+var costHoverInfo = document.getElementById('cost-hover-info');
+var costHoverDefault = costHoverInfo ? costHoverInfo.textContent : '';
+if (chartEl) {
+  var allBarWraps = chartEl.querySelectorAll('.cost-bar-wrap');
+  allBarWraps.forEach(function(wrap) {
+    var dayKey = wrap.getAttribute('data-day');
+    wrap.addEventListener('click', function(ev) { ev.preventDefault(); if (dayKey) openPanel(dayKey); });
+    wrap.addEventListener('mouseenter', function () {
+      if (!costHoverInfo || !dayKey) return;
+      var d = dailyData.find(function (x) { return x.key === dayKey; });
+      var primaryStr = d ? (SHARE_MODE ? d.h.toFixed(1) + 'h' : (d.e ? '~$' : '$') + d.c) : '';
+      var meta = d ? primaryStr + ' &middot; ' + d.n + ' entries' : '';
+      costHoverInfo.innerHTML = '<strong>' + dayKey + '</strong>' + (meta ? ' &mdash; ' + meta : '') + ' &middot; <span class="view-link">view day &rarr;</span>';
+    });
+    wrap.addEventListener('mouseleave', function () {
+      if (costHoverInfo) costHoverInfo.textContent = costHoverDefault;
+    });
+  });
+}
+
+// ============ SIDE PANEL ============
+var overlay = document.getElementById('panel-overlay');
+var panel = document.getElementById('side-panel');
+var panelDate = document.getElementById('panel-date');
+var panelCost = document.getElementById('panel-cost');
+var panelMeta = document.getElementById('panel-meta');
+var panelBody = document.getElementById('panel-body');
+
+var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function formatDayKey(key) {
+  // key is an ISO date "2026-06-10" — display it the way fullDate() does server-side.
+  var parts = key.split('-');
+  var mi = parseInt(parts[1], 10) - 1;
+  return MONTH_NAMES[mi] + ' ' + parseInt(parts[2], 10) + ', ' + parts[0];
+}
+
+function openPanel(dayKey) {
+  var entries = E[dayKey] || [];
+  var dayData = null;
+  for (var i = 0; i < dailyData.length; i++) {
+    if (dailyData[i].key === dayKey) { dayData = dailyData[i]; break; }
+  }
+
+  panelDate.textContent = formatDayKey(dayKey);
+  var hrsStr = dayData && dayData.h > 0 ? dayData.h.toFixed(1) + 'h logged' : '';
+  if (SHARE_MODE) {
+    panelCost.textContent = dayData && dayData.h > 0 ? dayData.h.toFixed(1) + 'h' : '—';
+    panelMeta.textContent = entries.length + ' entries';
+  } else {
+    var costStr = (dayData && dayData.e ? '~$' : '$') + (dayData ? dayData.c : 0);
+    panelCost.textContent = costStr;
+    panelMeta.textContent = entries.length + ' entries' + (hrsStr ? ' · ' + hrsStr : '') + (dayData && dayData.e ? ' · estimated' : '');
+  }
+
+  var html = '';
+  entries.forEach(function(desc) {
+    html += '<div class="entry-item"><div class="entry-dot"></div><div class="entry-text"><div class="entry-desc">' + desc + '</div></div></div>';
+  });
+  panelBody.innerHTML = html;
+
+  // Workstream mix — only present once Claude has authored the Workstreams section
+  // and defined window.wsMix (see SKILL.md). Absent otherwise; the block stays hidden.
+  var mixWrap = document.getElementById('panel-ws-mix');
+  var shares = (typeof window.wsMix !== 'undefined') ? window.wsMix[dayKey] : null;
+  if (mixWrap) {
+    if (shares && shares.length) {
+      var barHtml = shares.map(function (s) {
+        return '<div style="flex:' + s.pct + ' 0 0;background:' + s.color + '"></div>';
+      }).join('');
+      var legendHtml = shares.map(function (s) {
+        return '<span class="panel-ws-mix-item"><span class="panel-ws-mix-swatch" style="background:' + s.color + '"></span>' + s.name + ' · ' + s.pct + '%</span>';
+      }).join('');
+      document.getElementById('panel-ws-mix-bar').innerHTML = barHtml;
+      document.getElementById('panel-ws-mix-legend').innerHTML = legendHtml;
+      mixWrap.style.display = '';
+    } else {
+      mixWrap.style.display = 'none';
+    }
+  }
+
+  panel.classList.add('open');
+  overlay.classList.add('open');
+}
+
+function closePanel() {
+  panel.classList.remove('open');
+  overlay.classList.remove('open');
+  // Defense in depth: if a day-panel hash is ever in the URL (e.g. the user
+  // followed a bare link), clear it too so the :target fallback can't reappear
+  // underneath the JS panel after this point.
+  if (location.hash.indexOf('#panel-') === 0) {
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+}
+
+document.getElementById('panel-close').addEventListener('click', closePanel);
+overlay.addEventListener('click', closePanel);
+</script>
+</body>
+</html>
