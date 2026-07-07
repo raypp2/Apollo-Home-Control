@@ -20,6 +20,7 @@
 // HTTP MODULE FOR SENDING DEVICE COMMANDS
 var http = require('http');
 
+const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
 
 var hub_command = {
     host: process.env.INSTEON_HUB_IP,
@@ -143,6 +144,11 @@ function insteon_device_command(operation_num, address, insteon_command) {
 function insteon_send_command (operation_num, command){
 
     console.log("%d - Sending Command: %s", operation_num, command['path']);
+
+    if (DRY_RUN) {
+        console.log("%d - DRY RUN, would send Insteon command: %s", operation_num, command['path']);
+        return;
+    }
 
     var req = http.request(command, function(response) {
       var str = '';

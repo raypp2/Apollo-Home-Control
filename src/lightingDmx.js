@@ -19,6 +19,8 @@
 
 const axios = require('axios');
 
+const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
+
 const api = axios.create({
     baseURL: "http://" + process.env.DMX_BRIDGE_IP,
     headers: {
@@ -51,6 +53,11 @@ function dmx_scene_command(debugId, sceneId, command) {
         return Promise.reject('Invalid input');
     }
 
+    if (DRY_RUN) {
+        console.log("%d - DRY RUN, would send DMX scene command: %s", debugId, data);
+        return;
+    }
+
     api.post('/updateScene', data)
         .then(response => {
             console.log('%d - Response from bridge:', debugId, response.data);
@@ -75,7 +82,12 @@ function dmx_fixture_command(debugId, fixtureId, preset, command) {
         // Otherwise, just pass the command
         command = command.toLowerCase();
         data = `id=${fixtureId}&command=${command}&preset=${preset}`;
-    } 
+    }
+
+    if (DRY_RUN) {
+        console.log("%d - DRY RUN, would send DMX fixture command: %s", debugId, data);
+        return;
+    }
 
     api.post('/updateFixture', data)
         .then(response => {

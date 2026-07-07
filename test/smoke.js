@@ -65,9 +65,20 @@ function startServer() {
       reject(new Error('Server failed to start within ' + STARTUP_TIMEOUT + 'ms'));
     }, STARTUP_TIMEOUT);
 
+    // Default to dry-run mode so the smoke tests never actuate real hardware.
+    // Pass --live on the command line to restore today's behavior (real sends).
+    const isLive = process.argv.includes('--live');
+    const env = { ...process.env };
+    if (!isLive) {
+      env.APOLLO_DRY_RUN = '1';
+    } else {
+      delete env.APOLLO_DRY_RUN;
+    }
+
     server = spawn('node', ['index.js'], {
       cwd: path.resolve(__dirname, '..'),
       stdio: ['ignore', 'pipe', 'pipe'],
+      env,
     });
 
     let started = false;

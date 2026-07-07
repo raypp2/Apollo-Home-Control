@@ -26,6 +26,8 @@
 
 var net = require('net');
 
+const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
+
 /**
  * Sends a serial command to an iTach device.
  * Valid with iTach IP2SL and Flex controllers
@@ -34,6 +36,11 @@ var net = require('net');
  * @param {number} debug_id - The ID for debugging purposes.
  */
 function send_serial_command(iTach_address, serial_cmd, debug_id){
+
+	if (DRY_RUN) {
+		console.log("%d - DRY RUN, would send serial command: %s to %s", debug_id, serial_cmd, iTach_address);
+		return;
+	}
 
 	serial_cmd = serial_cmd.split("~");	 // Split multiple commands into array
 
@@ -81,6 +88,11 @@ function send_serial_command(iTach_address, serial_cmd, debug_id){
  */
 function send_cc_command(iTach_address, serial_cmd, debug_id){
 
+	if (DRY_RUN) {
+		console.log("%d - DRY RUN, would send contact closure command: %s to %s", debug_id, serial_cmd, iTach_address);
+		return;
+	}
+
 	serial_cmd = serial_cmd.split("~");	 // Split multiple commands into array
 
 	var client = new net.Socket();
@@ -127,6 +139,11 @@ function send_cc_command(iTach_address, serial_cmd, debug_id){
  * @param {number} debug_id - The ID used for debugging purposes.
  */
 function send_ir_command(iTach_address, serial_cmd, debug_id){
+
+	if (DRY_RUN) {
+		console.log("%d - DRY RUN, would send IR command: %s to %s", debug_id, serial_cmd, iTach_address);
+		return;
+	}
 
 	serial_cmd = serial_cmd.split("~");	 // Split multiple commands into array
 
