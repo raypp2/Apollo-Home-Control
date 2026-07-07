@@ -323,6 +323,12 @@ async function run() {
   console.log('\nStatic UI');
   await test('GET / serves index.html', '/', 200);
 
+  // --- Vendored dashboard JS (Stage 9, #21/#22) ---
+  console.log('\nVendored dashboard JS');
+  await test('GET /js/mqtt.min.js', '/js/mqtt.min.js', 200);
+  await test('GET /js/mqttDashboard.js', '/js/mqttDashboard.js', 200);
+  await test('GET /js/angular.min.js', '/js/angular.min.js', 200);
+
   // --- Summary ---
   console.log(`\n${'—'.repeat(40)}`);
   console.log(`\x1b[32m${passed} passed\x1b[0m, \x1b[31m${failed} failed\x1b[0m`);
