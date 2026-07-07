@@ -56,8 +56,13 @@ function waitUntil(conditionFn, { timeoutMs = 1000, intervalMs = 10 } = {}) {
  * command received (already `\r`-terminator-included, since these devices'
  * command language embeds `\r` itself) and answers power queries with its
  * current in-memory state.
+ *
+ * `wireTerminator` (default `\r`) controls how incoming commands are split
+ * off the wire -- pass `';'` to emulate an Anthem-style device whose whole
+ * command language (not just the response) is `;`-terminated with no `\r`
+ * anywhere, per issue #13's follow-up fix.
  */
-function startPowerAwareFixture(port, { queryCmd, onCmd, offCmd, onResponse, offResponse, initialState = 'off' }) {
+function startPowerAwareFixture(port, { queryCmd, onCmd, offCmd, onResponse, offResponse, initialState = 'off', wireTerminator = '\r' }) {
     let state = initialState;
     const received = [];
     return new Promise((resolve) => {
@@ -67,9 +72,9 @@ function startPowerAwareFixture(port, { queryCmd, onCmd, offCmd, onResponse, off
             socket.on('data', (data) => {
                 buffer += data.toString();
                 let idx;
-                while ((idx = buffer.indexOf('\r')) !== -1) {
-                    const cmd = buffer.slice(0, idx + 1);
-                    buffer = buffer.slice(idx + 1);
+                while ((idx = buffer.indexOf(wireTerminator)) !== -1) {
+                    const cmd = buffer.slice(0, idx + wireTerminator.length);
+                    buffer = buffer.slice(idx + wireTerminator.length);
                     received.push(cmd);
                     if (cmd === queryCmd) {
                         socket.write(state === 'on' ? onResponse : offResponse);
@@ -141,7 +146,98 @@ test('parsePowerResponse returns null for a null/undefined/unrecognized response
     assert.strictEqual(tcpServers.parsePowerResponse(device, 'GARBAGE'), null);
 });
 
+// --- deriveTerminator ---
+
+test('deriveTerminator returns \';\' when power_response_on ends with \';\' (Anthem-style)', () => {
+    const device = { power_commands: { power_response_on: 'Z1POW1;', power_response_off: 'Z1POW0;' } };
+    assert.strictEqual(tcpServers.deriveTerminator(device), ';');
+});
+
+test('deriveTerminator returns \'\\r\' when power_response_on ends with \'\\r\' (PJLink-style)', () => {
+    const device = { power_commands: { power_response_on: '%1POWR=1\r', power_response_off: '%1POWR=0\r' } };
+    assert.strictEqual(tcpServers.deriveTerminator(device), '\r');
+});
+
+test('deriveTerminator defaults to \'\\r\' when there are no power_commands at all', () => {
+    const device = { commands: {} };
+    assert.strictEqual(tcpServers.deriveTerminator(device), '\r');
+});
+
 // --- send_ip_command: power-check state machine ---
+
+test('Anthem-style device (`;`-terminated, no \\r): terminal derived as \';\' and the power-check round trip completes', async () => {
+    delete process.env.ITACH_PERSISTENT_CONNECTIONS;
+    const { received, port } = await startPowerAwareFixture(0, {
+        queryCmd: 'Z1POW?;',
+        onCmd: 'Z1POW1;',
+        offCmd: 'Z1POW0;',
+        onResponse: 'Z1POW1;', // no \r -- this is exactly the live-hardware bug (#13 follow-up)
+        offResponse: 'Z1POW0;',
+        initialState: 'off',
+        wireTerminator: ';',
+    });
+
+    const device = {
+        id: 'anthem',
+        type: 'ip_control',
+        address: '127.0.0.1',
+        port,
+        location: 'theater',
+        mqttName: 'anthem',
+        commands: { on: 'Z1POW1;', off: 'Z1POW0;', input1: 'Z1INP1;' },
+        power_commands: {
+            power_query: 'Z1POW?;',
+            power_response_on: 'Z1POW1;',
+            power_response_off: 'Z1POW0;',
+            power_on_delay: 10,
+            power_off_delay: 10,
+        },
+    };
+    mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
+
+    assert.strictEqual(tcpServers.deriveTerminator(device), ';');
+
+    await tcpServers.send_ip_command(1, device, device.commands.input1, true);
+    await waitUntil(() => received.length >= 3);
+
+    assert.deepStrictEqual(received, ['Z1POW?;', 'Z1POW1;', 'Z1INP1;']);
+    assert.ok(published.some((p) => p.payload.power === 'ON'), `expected a power:ON publish, got ${JSON.stringify(published)}`);
+});
+
+test('PJLink-style device (`\\r`-terminated) still round-trips correctly alongside the Anthem terminator handling', async () => {
+    delete process.env.ITACH_PERSISTENT_CONNECTIONS;
+    const { received, port } = await startPowerAwareFixture(0, {
+        queryCmd: '%1POWR ?\r',
+        onCmd: '%1POWR 1\r',
+        offCmd: '%1POWR 0\r',
+        onResponse: '%1POWR=1\r',
+        offResponse: '%1POWR=0\r',
+        initialState: 'on',
+        wireTerminator: '\r',
+    });
+
+    const device = {
+        id: 'projector',
+        type: 'ip_control',
+        address: '127.0.0.1',
+        port,
+        commands: { on: '%1POWR 1\r', off: '%1POWR 0\r', input1: '%1INPT 21\r' },
+        power_commands: {
+            power_query: '%1POWR ?\r',
+            power_response_on: '%1POWR=1\r',
+            power_response_off: '%1POWR=0\r',
+        },
+    };
+    mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
+
+    assert.strictEqual(tcpServers.deriveTerminator(device), '\r');
+
+    await tcpServers.send_ip_command(1, device, device.commands.input1, true);
+    await waitUntil(() => received.length >= 2);
+
+    assert.deepStrictEqual(received, ['%1POWR ?\r', '%1INPT 21\r']);
+    assert.ok(published.some((p) => p.payload.power === 'ON'));
+});
 
 test('device is off and command is not OFF: turns it on, then sends the command, and publishes power ON', async () => {
     delete process.env.ITACH_PERSISTENT_CONNECTIONS;
@@ -270,7 +366,45 @@ test('~-delimited commands are sent in order, spaced, without a power check', as
 
 // --- Status publishing ---
 
-test('publishes unreachable state when the connection drops', async () => {
+test('publishes unreachable state when the connection drops while a command is in-flight', async () => {
+    delete process.env.ITACH_PERSISTENT_CONNECTIONS;
+    let acceptedSocket = null;
+    await new Promise((resolve) => {
+        server = net.createServer((socket) => {
+            acceptedSocket = socket;
+            socket.on('error', () => {});
+            socket.resume(); // never responds -- the power query stays in-flight
+        });
+        server.listen(0, '127.0.0.1', resolve);
+    });
+    const port = server.address().port;
+
+    const device = {
+        id: 'plain', type: 'ip_control', address: '127.0.0.1', port,
+        commands: { on: 'ON\r', off: 'OFF\r' },
+        power_commands: { power_query: 'QUERY\r', power_response_on: 'ON\r', power_response_off: 'OFF\r' },
+    };
+    mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
+
+    // Deliberately not awaited -- the power-check query is in-flight
+    // (awaiting a response the fixture never sends) when the socket is
+    // destroyed below, which is the scenario this test targets.
+    tcpServers.send_ip_command(1, device, 'SOME_CMD', true);
+    // The client's send() can resolve/queue before the server's own
+    // 'connection' handler has necessarily run (they're independent callback
+    // chains -- under load, from other test files running in parallel, this
+    // otherwise-rare race becomes easy to hit), so wait for it explicitly
+    // rather than asserting immediately.
+    await waitUntil(() => acceptedSocket !== null);
+
+    published = []; // isolate from the command's own publishes (there are none here, but be explicit)
+    acceptedSocket.destroy();
+
+    await waitUntil(() => published.some((p) => p.payload.reachable === false));
+    assert.ok(published.some((p) => p.topic.endsWith('/state') && p.payload.reachable === false));
+});
+
+test('does NOT publish unreachable on a benign idle close (queue empty, nothing in-flight)', async () => {
     delete process.env.ITACH_PERSISTENT_CONNECTIONS;
     let acceptedSocket = null;
     await new Promise((resolve) => {
@@ -286,19 +420,21 @@ test('publishes unreachable state when the connection drops', async () => {
     const device = { id: 'plain', type: 'ip_control', address: '127.0.0.1', port, commands: {} };
     mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
 
+    // Fire-and-forget: send_ip_command's own promise resolves right after
+    // write, well before this close happens, so nothing is queued or
+    // in-flight -- mirrors a device closing an idle connection server-side.
     await tcpServers.send_ip_command(1, device, 'CMD_A', false);
-    // The client's fire-and-forget send() can resolve before the server's own
-    // 'connection' handler has necessarily run (they're independent callback
-    // chains -- under load, from other test files running in parallel, this
-    // otherwise-rare race becomes easy to hit), so wait for it explicitly
-    // rather than asserting immediately.
     await waitUntil(() => acceptedSocket !== null);
 
-    published = []; // isolate from the command's own publishes (there are none here, but be explicit)
+    published = [];
     acceptedSocket.destroy();
 
-    await waitUntil(() => published.some((p) => p.payload.reachable === false));
-    assert.ok(published.some((p) => p.topic.endsWith('/state') && p.payload.reachable === false));
+    // Give the close time to propagate; there should be no unreachable publish.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.ok(
+        !published.some((p) => p.payload.reachable === false),
+        `expected no unreachable publish for a benign close, got ${JSON.stringify(published)}`
+    );
 });
 
 // --- Legacy-flag routing ---

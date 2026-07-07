@@ -235,7 +235,45 @@ test('publishes online status to apollo/<location>/itach/<mqttName>/status when 
     }
 });
 
-test('publishes offline status when the connection drops', async () => {
+test('publishes offline status when the connection drops while a command is in-flight', async () => {
+    delete process.env.ITACH_PERSISTENT_CONNECTIONS;
+
+    const publishCalls = [];
+    const originalPublish = mqttClient.publish;
+    mqttClient.publish = (topic, payload, opts) => publishCalls.push({ topic, payload, opts });
+
+    let acceptedSocket = null;
+    try {
+        // Never responds -- keeps the IR command's expectResponse:true send
+        // in-flight until the socket is destroyed below, same as
+        // deviceConnection.test.js's "close while a command is in-flight"
+        // case (issue #13 follow-up: a close is only a real reachability
+        // transition when something was actually in-flight or queued).
+        await startFixture(IR_CC_PORT, (socket) => {
+            acceptedSocket = socket;
+        });
+
+        // Deliberately not awaited -- the command is still in-flight when we
+        // destroy the connection immediately below.
+        iTach.send_ir_command('127.0.0.1', 'power_toggle', 1);
+        // server.close() alone wouldn't drop this already-accepted connection
+        // (it only stops accepting NEW ones) -- explicitly sever this one
+        // from the server side, same as a real device dropping the link.
+        await waitUntil(() => acceptedSocket !== null);
+        acceptedSocket.destroy();
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        assert.ok(
+            publishCalls.some((c) => c.topic === 'apollo/test/itach/test-ir/status' && c.payload === 'offline'),
+            `expected an offline status publish, got: ${JSON.stringify(publishCalls)}`
+        );
+    } finally {
+        mqttClient.publish = originalPublish;
+    }
+});
+
+test('does NOT publish offline on a benign idle close (queue empty, nothing in-flight)', async () => {
     delete process.env.ITACH_PERSISTENT_CONNECTIONS;
 
     const publishCalls = [];
@@ -252,17 +290,18 @@ test('publishes offline status when the connection drops', async () => {
         });
 
         await iTach.send_ir_command('127.0.0.1', 'power_toggle', 1);
-        // server.close() alone wouldn't drop this already-accepted connection
-        // (it only stops accepting NEW ones) -- explicitly sever this one
-        // from the server side, same as a real device dropping the link.
         assert.ok(acceptedSocket, 'fixture never accepted a connection');
+
+        publishCalls.length = 0; // isolate from the command's own online publish
+        // Close well after the command's response already resolved -- e.g.
+        // an idle-timeout style close -- nothing queued, nothing in-flight.
         acceptedSocket.destroy();
 
         await new Promise((resolve) => setTimeout(resolve, 300));
 
         assert.ok(
-            publishCalls.some((c) => c.topic === 'apollo/test/itach/test-ir/status' && c.payload === 'offline'),
-            `expected an offline status publish, got: ${JSON.stringify(publishCalls)}`
+            !publishCalls.some((c) => c.payload === 'offline'),
+            `expected no offline status publish for a benign close, got: ${JSON.stringify(publishCalls)}`
         );
     } finally {
         mqttClient.publish = originalPublish;
