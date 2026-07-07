@@ -100,11 +100,12 @@ test('command1 "11" (ON) publishes canonical ON state and syncs the in-memory en
     assert.strictEqual(kitchen.status, 100);
 });
 
-test('command1 "13" (OFF) publishes canonical OFF state and syncs the in-memory entry', () => {
+test('command1 "13" (OFF) publishes canonical OFF state (with brightness:0) and syncs the in-memory entry', () => {
     listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '13', command2: '00' } });
 
     assert.strictEqual(published.length, 1);
     assert.strictEqual(published[0].payload.power, 'OFF');
+    assert.strictEqual(published[0].payload.brightness, 0);
     assert.strictEqual(published[0].payload.source, 'event');
     assert.strictEqual(kitchen.checked, false);
     assert.strictEqual(kitchen.status, 0);
@@ -136,6 +137,82 @@ test('malformed info (missing standard/id) is ignored, no throw', () => {
     assert.doesNotThrow(() => listener._handleHubCommand({}));
     assert.doesNotThrow(() => listener._handleHubCommand({ standard: {} }));
     assert.strictEqual(published.length, 0);
+});
+
+// --- _handleHubCommand: event follow-up poll for physical ON events ---
+// (the switch ramps to a locally-stored level the hub's ON/OFF broadcast
+// doesn't carry -- see module doc comment on scheduleEventFollowUpPoll)
+
+test('ON event schedules a follow-up poll that publishes the actual (poll-sourced) brightness', async () => {
+    listener._setEventFollowUpPollDelayForTesting(20);
+    listener._setHub(fakeHubWithLevels({ '2A2A2A': 62 }));
+
+    listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '11', command2: 'FF' } });
+
+    // Synchronous event publish happens immediately, before the follow-up poll fires.
+    assert.strictEqual(published.length, 1);
+    assert.strictEqual(published[0].payload.source, 'event');
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    assert.strictEqual(published.length, 2);
+    assert.strictEqual(published[1].topic, 'apollo/home/insteon/kitchen/state');
+    assert.strictEqual(published[1].payload.power, 'ON');
+    assert.strictEqual(published[1].payload.brightness, 62);
+    assert.strictEqual(published[1].payload.source, 'poll');
+    assert.strictEqual(kitchen.checked, true);
+    assert.strictEqual(kitchen.status, 62);
+});
+
+test('OFF event publishes brightness:0 immediately and schedules no follow-up poll', async () => {
+    listener._setEventFollowUpPollDelayForTesting(20);
+    listener._setHub(fakeHubWithLevels({ '2A2A2A': 62 }));
+
+    listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '13', command2: '00' } });
+
+    assert.strictEqual(published.length, 1);
+    assert.strictEqual(published[0].payload.brightness, 0);
+    assert.strictEqual(published[0].payload.source, 'event');
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    // Still just the one OFF publish -- no follow-up poll was scheduled.
+    assert.strictEqual(published.length, 1);
+});
+
+test('a burst of repeated ON events schedules exactly one follow-up poll', async () => {
+    listener._setEventFollowUpPollDelayForTesting(20);
+    listener._setHub(fakeHubWithLevels({ '2A2A2A': 45 }));
+
+    listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '11', command2: 'FF' } });
+    listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '11', command2: 'FF' } });
+    listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '11', command2: 'FF' } });
+
+    // Three synchronous event publishes (one per re-emission)...
+    assert.strictEqual(published.length, 3);
+    assert.ok(published.every((p) => p.payload.source === 'event'));
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    // ...but only one poll-sourced follow-up publish.
+    const pollPublishes = published.filter((p) => p.payload.source === 'poll');
+    assert.strictEqual(pollPublishes.length, 1, 'a burst of identical ON events must only schedule one follow-up poll');
+    assert.strictEqual(pollPublishes[0].payload.brightness, 45);
+});
+
+test('follow-up poll rejection is caught and logged, never throws or leaves an unhandled rejection', async () => {
+    listener._setEventFollowUpPollDelayForTesting(20);
+    listener._setHub(fakeHubWithLevels({ '2A2A2A': { reject: 'hub unreachable' } }));
+
+    assert.doesNotThrow(() => {
+        listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '11', command2: 'FF' } });
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    // Only the synchronous event publish -- the failed follow-up poll never published.
+    assert.strictEqual(published.length, 1);
+    assert.strictEqual(published[0].payload.source, 'event');
 });
 
 // --- isKeypadPress: dedupe window (issue #31) ---
