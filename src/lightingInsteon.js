@@ -1,10 +1,10 @@
 /**
  * Apollo Home Control Bridge - Insteon Module
  * @module lightingInsteon.js
- * 
+ *
  * @author Ray Perfetti
  * @date 2023-10-08
- * 
+ *
  * @description  Controls lighting fixtures and scenes on the Insteon platform
 *                with the ability to turn on/off, dim, and execute scenes.
 *
@@ -13,7 +13,7 @@
 *                This function does not require Insteon's paid cloud service and does not access to internet.
 *
 *                Dependencies:
-*                - Insteon Hub (tested with 2245-222)   
+*                - Insteon Hub (tested with 2245-222)
 */
 
 
@@ -31,7 +31,7 @@ var hub_command = {
 
 
 // Needed exclusively for insteon_button_blink
-const { lightingScenes }                                  
+const { lightingScenes }
         = require('../index');
 const lighting_scenes = lightingScenes;
 
@@ -51,7 +51,7 @@ function insteon_scene_command (operation_num, scene, insteon_command) {
     11        ON=11, OFF=13
     1         SCENE ID
     =I=0      END FOR ALL COMMANDS
-    
+
     */
 
     switch(insteon_command) {
@@ -189,11 +189,17 @@ insteon_button_blink(operation_num,'button-a');
 */
 function insteon_button_blink(operation_num, sceneID) {
 
+    var sceneInsteon = false;
     for(var i = 0; i < lighting_scenes.length; i++) {
         if(lighting_scenes[i].id == sceneID) {
-            var sceneInsteon =   lighting_scenes[i].insteon_group || false;
+            sceneInsteon =   lighting_scenes[i].insteon_group || false;
         }
       }
+
+    if (!sceneInsteon) {
+        console.log("%d - ERR: No matching scene found for blink: %s", operation_num, sceneID);
+        return;
+    }
 
     insteon_scene_command (operation_num, sceneInsteon, "OFF");
     setTimeout(function () { insteon_scene_command (operation_num, sceneInsteon, "ON"); }, 1500);
@@ -214,19 +220,19 @@ function levelToHexByte(level) {
     }
     // scale level to a max of 0xFF (255)
     level = ~~ (255 * level / 100);
-  
+
     return toByte(level);
-  
+
   }
-  
+
   function toByte(value, length) {
     length = length || 1;
     value = value.toString(16).toUpperCase();
     var pad = new Array((length * 2) + 1).join('0');
     return pad.substring(0, pad.length - value.length) + value;
   }
-  
-  
+
+
 
 module.exports = {
     insteon_device_command,
