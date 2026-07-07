@@ -92,7 +92,11 @@ const receiveMessages = async () => {
       console.log("Message Body: %s", message.Body);
       console.log("\nApproximate Receive Count: %s", message.Attributes.ApproximateReceiveCount);
       console.log("SQS Measured Duration: %s ms", message.Attributes.ApproximateFirstReceiveTimestamp - message.Attributes.SentTimestamp);
-      console.log("LOCAL Measured Duration: %s ms", Date.now() - message.MessageAttributes.local_timestamp.StringValue);
+      // Guard against malformed/poison messages missing this attribute -- without the
+      // optional chaining, this throws BEFORE the message is deleted below, causing an
+      // infinite retry loop on that single message.
+      const localTimestamp = message.MessageAttributes?.local_timestamp?.StringValue;
+      console.log("LOCAL Measured Duration: %s ms", localTimestamp ? (Date.now() - localTimestamp) : "n/a");
       console.log("##################################\n");
 
               
@@ -123,6 +127,8 @@ const receiveMessages = async () => {
     }
   } catch (err) {
     console.error(err);
+    // Avoid a tight busy-loop if SQS or the network is persistently failing.
+    await new Promise(r => setTimeout(r, 10000));
   }
 };
 
