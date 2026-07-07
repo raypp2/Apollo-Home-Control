@@ -35,6 +35,7 @@ const subscriptions = [];
 // flooding apollo.log with a line per reconnect attempt.
 let wasConnected = false;
 let loggedReconnecting = false;
+let lastErrorKey = null;
 
 /**
  * Matches an MQTT topic against a filter that may contain '+' (single-level
@@ -99,6 +100,7 @@ function connect() {
     client.on('connect', () => {
         wasConnected = true;
         loggedReconnecting = false;
+        lastErrorKey = null;
         console.log('MQTT: connected to %s', brokerUrl);
 
         // Re-subscribe everything registered so far (survives reconnects).
@@ -128,7 +130,13 @@ function connect() {
     });
 
     client.on('error', (err) => {
-        console.log('MQTT: connection error: %s', err.message || err.code || err);
+        // Log each distinct error once, not once per 5s reconnect attempt --
+        // a broker outage must not flood apollo.log (transitions-only rule).
+        const errorKey = err.code || err.message || String(err);
+        if (errorKey !== lastErrorKey) {
+            lastErrorKey = errorKey;
+            console.log('MQTT: connection error: %s (suppressing repeats)', err.message || err.code || err);
+        }
     });
 
     client.on('message', (topic, messageBuffer) => {
@@ -137,22 +145,19 @@ function connect() {
         try {
             payload = JSON.parse(raw);
         } catch {
-            // Reconciling two Stage-1 spec statements that are in tension:
-            // the public API doc says payload should be "JSON.parse'd if
-            // possible, else the raw string" (i.e. non-JSON strings like plain
-            // "online"/"offline" are a normal, expected payload shape -- not an
-            // error). The engineering-detail doc separately says JSON parse
-            // failures should be logged (topic + first 100 chars) and never
-            // throw. Both are satisfied here: we log the failed-parse case for
-            // visibility, then still deliver the raw string to handlers rather
-            // than silently dropping the message entirely -- callers that only
-            // care about JSON payloads (e.g. mqttTopics.findByTopic consumers)
-            // can ignore a string payload themselves. Nothing here can throw.
-            console.log(
-                'MQTT: non-JSON payload on %s (first 100 chars): %s',
-                topic,
-                raw.slice(0, 100)
-            );
+            // Plain-string payloads ("online", "offline", "stale") are a normal,
+            // expected shape on status topics -- handlers receive them as the raw
+            // string. Only payloads that LOOK like attempted JSON (start with
+            // '{' or '[') get logged as parse failures; anything else passes
+            // through silently. Nothing here can throw.
+            const trimmed = raw.trimStart();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                console.log(
+                    'MQTT: malformed JSON payload on %s (first 100 chars): %s',
+                    topic,
+                    raw.slice(0, 100)
+                );
+            }
         }
 
         for (const { filter, handler } of subscriptions) {

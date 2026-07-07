@@ -199,12 +199,18 @@ function findByTopic(topic) {
         return null;
     }
 
-    const [, , , mqttName] = parts;
+    // Match on the FULL topic, not just mqttName -- the naming convention
+    // encourages generic per-room names ("light" in both kitchen and hall),
+    // so mqttName alone is not unique. Rebuilding each entry's canonical
+    // topic and comparing catches location and ecosystem too.
+    const attribute = parts[4];
+    if (attribute !== 'state' && attribute !== 'set') {
+        return null;
+    }
 
     const all = [...(lights || []), ...(devices || [])];
     for (const entry of all) {
-        const entryMqttName = entry.mqttName || entry.id;
-        if (entryMqttName === mqttName) {
+        if (topicFor(entry, attribute) === topic) {
             return entry;
         }
     }
