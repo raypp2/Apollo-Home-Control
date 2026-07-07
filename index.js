@@ -109,6 +109,11 @@ if (DRY_RUN) {
     insteonListener.startListener(handleRequest);
 }
 
+// Health monitor (Stage 8, issue #20) -- last startup step since it observes
+// everything else (all state topics + bridge status topics published above).
+// Read-only: runs in dry-run too, since it never sends device commands.
+require('./src/healthMonitor').start();
+
 // Catch unhandled errors to prevent a single ecosystem failure from crashing the entire bridge
 process.on('uncaughtException', function(err) {
     console.log('Uncaught exception: %s', err.message);

@@ -26,6 +26,20 @@ app.use(express.static('public'));
 // const mDNS = require('bonjour')();
 
 
+// IMPORTANT: this must be registered BEFORE the '/api' catch-all middleware
+// below, otherwise that middleware's app.use('/api', ...) swallows this route
+// first and routes /api/health into handleRequest as if "health" were a
+// device command (see src/handler.js's MODULE switch). Express matches
+// middleware/routes in registration order, so more-specific routes must come
+// first. healthMonitor is require()'d lazily inside the handler (not at
+// module load time) because webServer.js is required before healthMonitor's
+// config dependencies (mqttTopics -> '../index') are ready -- same lazy-init
+// rule documented in healthMonitor.js's module comment.
+app.get('/api/health', function(request, response) {
+    const healthMonitor = require('./healthMonitor');
+    response.json(healthMonitor.getHealth());
+});
+
 app.use('/api', function(request, response, next) {
 
 	console.log("\n\n###### API Message Received ######");
