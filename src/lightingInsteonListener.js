@@ -194,6 +194,13 @@ function startListener(handleRequest) {
  * is ignored silently -- dimming/brighten/etc are not (yet) mapped to a
  * canonical state here.
  *
+ * A physical switch press only ever broadcasts ON/OFF -- the ramp-to level is
+ * whatever the switch has locally stored, which the hub does not include in
+ * the event. OFF is unambiguous (brightness is definitionally 0, published
+ * directly below), but ON needs a follow-up level poll (issue #11 follow-up:
+ * dim value stays stale until the round-robin sweep happens to reach this
+ * device, up to ~90s) -- see scheduleEventFollowUpPoll().
+ *
  * Exported as a pure-ish function (only side effect is via injected/module
  * lights_new + mqttTopics) for direct unit testing, mirroring lightingShelly's
  * `_handle*` test-instrumentation pattern.
@@ -223,10 +230,101 @@ function _handleHubCommand(info) {
         return;
     }
 
-    mqttTopics.publishState(entry, { power }, 'event');
+    if (power === 'ON') {
+        mqttTopics.publishState(entry, { power }, 'event');
+        entry.checked = true;
+        entry.status = 100;
+        scheduleEventFollowUpPoll(entry, commandId);
+    } else {
+        // OFF is unambiguous -- brightness is definitionally 0, no poll needed.
+        mqttTopics.publishState(entry, { power, brightness: 0 }, 'event');
+        entry.checked = false;
+        entry.status = 0;
+    }
+}
 
-    entry.checked = (power === 'ON');
-    entry.status = (power === 'ON') ? 100 : 0;
+/*
+############# EVENT FOLLOW-UP POLL (physical ON events)
+
+A physical switch ON press ramps to whatever level the switch has locally
+stored -- the hub's broadcast event doesn't carry it, so the optimistic
+{power: 'ON'} published above leaves the dashboard's dim value stale. This
+schedules a single one-shot level() poll shortly after, mirroring
+lightingInsteon.js's verifyDeviceState() but simpler: this is a read (never
+calls noteCommandSent()) and a failure is just dropped -- the round-robin
+sweep will catch up on its own, so this never engages pollPausedUntil.
+*/
+
+let EVENT_FOLLOWUP_POLL_DELAY_MS = 3000;
+
+// Dedupe (issue #31-style burst re-emission): the hub re-emits the same
+// physical event several times in a quick burst. Without this, each
+// re-emission would schedule its own follow-up poll. Keyed by uppercased hex
+// address; a timer stays in this map from scheduling until it fires (or is
+// cleared by _resetPollStateForTesting) so a burst only ever schedules one.
+let pendingEventFollowUpPolls = new Map(); // commandId -> Timeout
+
+/**
+ * Test-only hook: shrinks the event follow-up poll delay (e.g. to 50ms) so
+ * tests can exercise it with a real, short setTimeout instead of waiting out
+ * the real 3000ms delay. Never called from production code.
+ * @param {number} ms
+ */
+function _setEventFollowUpPollDelayForTesting(ms) {
+    EVENT_FOLLOWUP_POLL_DELAY_MS = ms;
+}
+
+/**
+ * Schedules a single one-shot level() poll for `entry` unless one is already
+ * pending for the same address -- a burst of identical ON events (the hub
+ * re-emits) must only ever schedule one follow-up poll.
+ * @param {object} entry - the lights.json entry to poll
+ * @param {string} commandId - uppercased hex address, used as the dedupe key
+ */
+function scheduleEventFollowUpPoll(entry, commandId) {
+    if (pendingEventFollowUpPolls.has(commandId)) {
+        return; // already have a follow-up poll pending for this device
+    }
+
+    const timer = setTimeout(function () {
+        pendingEventFollowUpPolls.delete(commandId);
+        runEventFollowUpPoll(entry);
+    }, EVENT_FOLLOWUP_POLL_DELAY_MS);
+
+    if (typeof timer.unref === 'function') {
+        timer.unref();
+    }
+
+    pendingEventFollowUpPolls.set(commandId, timer);
+}
+
+/**
+ * Polls the device's actual level via the hub and publishes the polled truth,
+ * mirroring pollTick()'s payload shape. Never throws and never triggers an
+ * unhandled rejection -- a failure here is simply dropped (logged once); the
+ * round-robin sweep will correct the stale brightness on its own, so this
+ * deliberately does not engage pollPausedUntil/handlePollError's 60s backoff.
+ * @param {object} entry
+ */
+function runEventFollowUpPoll(entry) {
+    let result;
+    try {
+        result = hub.light(entry.address).level();
+    } catch (err) {
+        console.log('Insteon event follow-up poll error: %s', err && err.message);
+        return;
+    }
+
+    Promise.resolve(result).then(function (lvl) {
+        const level = (typeof lvl === 'number') ? lvl : 0;
+        const power = level > 0 ? 'ON' : 'OFF';
+
+        mqttTopics.publishState(entry, { power, brightness: level }, 'poll');
+        entry.checked = (power === 'ON');
+        entry.status = level;
+    }).catch(function (err) {
+        console.log('Insteon event follow-up poll error: %s', err && err.message);
+    });
 }
 
 /**
@@ -278,8 +376,9 @@ function insteonLights() {
 
 /**
  * Test-only hook: resets all module-level poll scheduling state (rotation
- * index, in-flight flag, error backoff window/flag, lastCommandAt) so tests
- * don't leak state into each other. Never called from production code.
+ * index, in-flight flag, error backoff window/flag, lastCommandAt, and any
+ * pending event follow-up poll timers) so tests don't leak state into each
+ * other. Never called from production code.
  */
 function _resetPollStateForTesting() {
     pollRotationIndex = 0;
@@ -287,6 +386,11 @@ function _resetPollStateForTesting() {
     pollPausedUntil = 0;
     loggedPollError = false;
     lastCommandAt = 0;
+
+    for (const timer of pendingEventFollowUpPolls.values()) {
+        clearTimeout(timer);
+    }
+    pendingEventFollowUpPolls.clear();
 }
 
 /**
@@ -444,4 +548,5 @@ module.exports = {
     _resetPollStateForTesting,
     _setKeypadDedupeWindowForTesting,
     _resetKeypadStateForTesting,
+    _setEventFollowUpPollDelayForTesting,
     };
