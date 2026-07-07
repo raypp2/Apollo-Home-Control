@@ -99,6 +99,7 @@ if (DRY_RUN) {
     // (not just skipping startListener()) is needed here.
     console.log("###### APOLLO_DRY_RUN=1 -- SQS Listener NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- Insteon Listener NOT started (dry-run) ######");
+    console.log("###### APOLLO_DRY_RUN=1 -- Hue SSE Listener NOT started (dry-run) ######");
 } else {
     // Start SQS Listener
     const sqsListener = require('./src/sqsListener');
@@ -107,6 +108,14 @@ if (DRY_RUN) {
     // Start Insteon Listener for KeyPad Presses
     const insteonListener = require('./src/lightingInsteonListener');
     insteonListener.startListener(handleRequest);
+
+    // Start Philips Hue SSE Listener (Stage 4 of the MQTT plan, issue #12) --
+    // subscribes to the Hue bridge's own event stream for near-real-time
+    // state publishing, with a v1 HTTP fallback poll while disconnected.
+    // Gated the same way as the Insteon listener above: it holds an open
+    // connection to real hardware, so it's skipped in dry-run.
+    const hueListener = require('./src/lightingPhilipsHueListener');
+    hueListener.startListener();
 }
 
 // Health monitor (Stage 8, issue #20) -- last startup step since it observes
