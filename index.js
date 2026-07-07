@@ -77,6 +77,12 @@ const { handleRequest }
 const { startShellyListener } = require('./src/lightingShelly.js');
 startShellyListener();
 
+// Subscribe to the ESPSomfy-RTS bridge's native MQTT per-shade position
+// topics and republish canonical state (Stage 2 of the MQTT plan). Same
+// load-order rule as above -- requires mqttTopics.js.
+const { startSomfyListener } = require('./src/somfyBridge.js');
+startSomfyListener();
+
 // Rebuild Alexa Triggers Config File
 const alexa = require('./src/alexaTriggers');
 alexa.buildTriggers();
