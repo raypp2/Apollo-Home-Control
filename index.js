@@ -61,8 +61,13 @@ module.exports = {
     logging
 }
 
+// Connect to the MQTT broker first -- non-blocking, safe even if the broker
+// is down. Other modules require this freely since it never requires('../index').
+const mqttClient = require('./src/mqttClient');
+mqttClient.connect();
+
 // Orchestration Handlers
-const { handleRequest }                                   
+const { handleRequest }
 = require('./src/handler.js');
 
 // Rebuild Alexa Triggers Config File

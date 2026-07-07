@@ -5,6 +5,8 @@
     "icon": "icon-kitchen",
     "type": "insteon",
     "address": "XXXXXX",
+    "location": "kitchen", // MQTT topic level 2 (apollo/<location>/...). Default if omitted: "home"
+    "mqttName": "light",   // MQTT topic level 4. Default if omitted: the "id" above
     "status": "",           // Storage of the lighting level (0-100)
     "checked": true,        // Denotes the light checkbox state in the UI
 	"alexa": {

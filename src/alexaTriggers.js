@@ -47,7 +47,9 @@ function buildTriggers(){
                 "displayCategories": light.alexa.displayCategories,
                 "apiModule": "LIGHTS",
                 "apiDevice": light.id,
-                "isDimmable": light.alexa.isDimmable
+                "isDimmable": light.alexa.isDimmable,
+                "location": light.location || "home",
+                "mqttName": light.mqttName || light.id
             });
             }
         }
@@ -66,7 +68,9 @@ function buildTriggers(){
                     "displayCategories": lightingScene.alexa.displayCategories,
                     "apiModule": "LIGHTINGSCENES",
                     "apiDevice": lightingScene.id,
-                    "isDimmable": lightingScene.alexa.isDimmable
+                    "isDimmable": lightingScene.alexa.isDimmable,
+                    "location": lightingScene.location || "home",
+                    "mqttName": lightingScene.mqttName || lightingScene.id
                 });
             }
         }
@@ -84,7 +88,9 @@ function buildTriggers(){
                     "friendlyName": macro.alexa.invocations[index],
                     "displayCategories": macro.alexa.displayCategories,
                     "apiModule": "MACROS",
-                    "apiDevice": macro.id
+                    "apiDevice": macro.id,
+                    "location": macro.location || "home",
+                    "mqttName": macro.mqttName || macro.id
                 });
             }
         }
@@ -102,7 +108,9 @@ function buildTriggers(){
                     "friendlyName": deviceScene.alexa.invocations[index],
                     "displayCategories": deviceScene.alexa.displayCategories,
                     "apiModule": "DEVICESCENES",
-                    "apiDevice": deviceScene.id
+                    "apiDevice": deviceScene.id,
+                    "location": deviceScene.location || "home",
+                    "mqttName": deviceScene.mqttName || deviceScene.id
                 });
             }
         }
@@ -167,7 +175,9 @@ function buildTriggers(){
                     "isLock": isLock,
                     "isAC": isAC,
                     "isSpeaker": isSpeaker,
-                    "isPercentageController": isPercentageController
+                    "isPercentageController": isPercentageController,
+                    "location": device.location || "home",
+                    "mqttName": device.mqttName || device.id
                 });
 
             }

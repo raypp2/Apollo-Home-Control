@@ -2,7 +2,9 @@
 
 const { spawn } = require('child_process');
 const http = require('http');
+const net = require('net');
 const path = require('path');
+const mqtt = require('mqtt');
 
 const PORT = 80;
 const BASE = `http://localhost:${PORT}`;
@@ -57,6 +59,96 @@ async function test(name, urlPath, expectedStatus) {
 async function fetchJson(urlPath) {
   const res = await request(urlPath);
   return JSON.parse(res.body);
+}
+
+const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
+const MQTT_STATUS_TOPIC = 'apollo/bridge/apollo/status';
+const MQTT_PROBE_TIMEOUT = 1000;
+const MQTT_STATUS_TIMEOUT = 3000;
+
+function probeMqttBroker() {
+  return new Promise((resolve) => {
+    let url;
+    try {
+      url = new URL(MQTT_BROKER_URL);
+    } catch {
+      resolve(false);
+      return;
+    }
+    const port = Number(url.port) || 1883;
+    const socket = net.createConnection({ host: url.hostname, port });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve(false);
+    }, MQTT_PROBE_TIMEOUT);
+
+    socket.on('connect', () => {
+      clearTimeout(timer);
+      socket.end();
+      resolve(true);
+    });
+    socket.on('error', () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+  });
+}
+
+// Connects a second (independent) MQTT client to the broker and asserts the
+// retained apollo/bridge/apollo/status message published by the just-started
+// Apollo server is "online", within a few seconds. Skips (does not fail) if
+// nothing is listening on the broker -- this test never actuates hardware,
+// it only observes the MQTT bridge status.
+async function testMqttBridgeStatus() {
+  const name = 'MQTT bridge status is retained "online"';
+  const brokerUp = await probeMqttBroker();
+  if (!brokerUp) {
+    console.log(`  \x1b[33mSKIPPED\x1b[0m ${name} — no broker listening at ${MQTT_BROKER_URL}`);
+    return;
+  }
+
+  let client;
+  try {
+    const payload = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Timed out after ${MQTT_STATUS_TIMEOUT}ms waiting for retained status`));
+      }, MQTT_STATUS_TIMEOUT);
+
+      client = mqtt.connect(MQTT_BROKER_URL, { reconnectPeriod: 0 });
+      client.on('connect', () => {
+        client.subscribe(MQTT_STATUS_TOPIC, { qos: 1 }, (err) => {
+          if (err) {
+            clearTimeout(timer);
+            reject(err);
+          }
+        });
+      });
+      client.on('message', (topic, message) => {
+        clearTimeout(timer);
+        resolve(message.toString());
+      });
+      client.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+
+    if (payload === 'online') {
+      passed++;
+      console.log(`  \x1b[32mPASS\x1b[0m  ${name}`);
+    } else {
+      failed++;
+      const msg = `Expected "online", got "${payload}"`;
+      failures.push({ name, msg });
+      console.log(`  \x1b[31mFAIL\x1b[0m  ${name} — ${msg}`);
+    }
+  } catch (err) {
+    failed++;
+    failures.push({ name, msg: err.message });
+    console.log(`  \x1b[31mFAIL\x1b[0m  ${name} — ${err.message}`);
+  } finally {
+    if (client) client.end(true);
+  }
 }
 
 function startServer() {
@@ -129,6 +221,11 @@ async function run() {
     process.exit(1);
   }
   console.log('Server is up.\n');
+
+  // --- MQTT bridge status ---
+  console.log('MQTT');
+  await testMqttBridgeStatus();
+  console.log('');
 
   // --- List endpoints ---
   console.log('/list endpoints');
