@@ -21,16 +21,36 @@
  */
 
 
-// Load variables
-const { devices, deviceScenes, lights, lightingScenes, macros, logging }                                  
-        = require('../index');
-
+// isAlexaStateful is pure/config-free (no ensureInit(), no require('../index')
+// or require('./mqttClient') at call time) -- see the comment above its
+// definition in mqttTopics.js. That's what makes it safe to import here at
+// module load time: this module runs at Apollo startup, immediately after
+// index.js has finished exporting (see index.js: alexaTriggers is required
+// right after mqttClient), and merely importing mqttTopics.js must not
+// trigger its lazy config/broker init before the rest of startup is ready
+// for that.
+const { isAlexaStateful } = require('./mqttTopics');
 
 /**
- * Builds an array of Alexa triggers based on the configuration of the devices, lighting scenes, and macros.
- * The resulting array is written to a JSON file.
+ * Builds the Alexa triggers array from the given config arrays. Pure --
+ * no fs access -- so it's testable without writing config/triggers.json.
+ *
+ * For each config entry's first (index 0) invocation, where endpointId ===
+ * entry.id (i.e. NOT an alias endpoint like "shades-2"), stamps
+ * "statefulMqtt": true when the entry qualifies per isAlexaStateful(). Alias
+ * endpoints stay stateless -- they share the same underlying device state as
+ * the primary endpoint, and Alexa should only treat one endpoint per physical
+ * device as the source of truth for ReportState.
+ *
+ * @param {object} configs
+ * @param {Array} configs.devices
+ * @param {Array} configs.deviceScenes
+ * @param {Array} configs.lights
+ * @param {Array} configs.lightingScenes
+ * @param {Array} configs.macros
+ * @returns {Array} the triggers array (unwritten)
  */
-function buildTriggers(){
+function buildTriggersArray({ devices, deviceScenes, lights, lightingScenes, macros }) {
 
     let triggersBuild = [];
     let endpointIdValue = "";
@@ -41,7 +61,7 @@ function buildTriggers(){
                 endpointIdValue = light.id;
                 if(index>0)
                 endpointIdValue = light.id + "-" + (index+1);
-            triggersBuild.push({
+            const trigger = {
                 "endpointId": endpointIdValue,
                 "friendlyName": light.alexa.invocations[index],
                 "displayCategories": light.alexa.displayCategories,
@@ -50,7 +70,11 @@ function buildTriggers(){
                 "isDimmable": light.alexa.isDimmable,
                 "location": light.location || "home",
                 "mqttName": light.mqttName || light.id
-            });
+            };
+            if (index === 0 && isAlexaStateful(light)) {
+                trigger.statefulMqtt = true;
+            }
+            triggersBuild.push(trigger);
             }
         }
     }
@@ -165,7 +189,7 @@ function buildTriggers(){
                 if (device.alexa.apiCommand) 
                     apiCommand = device.alexa.apiCommand[index];
 
-                triggersBuild.push({
+                const trigger = {
                     "endpointId": endpointIdValue,
                     "friendlyName": device.alexa.invocations[index],
                     "displayCategories": device.alexa.displayCategories,
@@ -178,11 +202,37 @@ function buildTriggers(){
                     "isPercentageController": isPercentageController,
                     "location": device.location || "home",
                     "mqttName": device.mqttName || device.id
-                });
+                };
+                if (index === 0 && isAlexaStateful(device)) {
+                    trigger.statefulMqtt = true;
+                }
+                triggersBuild.push(trigger);
 
             }
         }
     }
+
+    return triggersBuild;
+}
+
+/**
+ * Builds the triggers array from Apollo's live config (via require('../index'))
+ * and writes it to config/triggers.json. Thin fs-writing wrapper around the
+ * pure buildTriggersArray() -- kept separate so tests can exercise the
+ * trigger-building logic against injected fixture config without touching
+ * the filesystem.
+ *
+ * The require('../index') here is deliberately lazy (inside the function,
+ * not at module scope) so that merely requiring this module -- as
+ * test/alexaTriggers.test.js does, to reach the pure buildTriggersArray() --
+ * never boots the whole Apollo config-loading chain. Production's only
+ * caller (index.js) already invokes this after index.js has finished
+ * exporting, same load-order rule as every other src/ module.
+ */
+function buildTriggers(){
+
+    const { devices, deviceScenes, lights, lightingScenes, macros } = require('../index');
+    const triggersBuild = buildTriggersArray({ devices, deviceScenes, lights, lightingScenes, macros });
 
     const fs = require('fs');
 
@@ -200,7 +250,8 @@ function buildTriggers(){
 }
 
 module.exports = {
-    buildTriggers
+    buildTriggers,
+    buildTriggersArray
 }
 
 /*
