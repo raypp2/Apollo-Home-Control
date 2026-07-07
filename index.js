@@ -70,6 +70,13 @@ mqttClient.connect();
 const { handleRequest }
 = require('./src/handler.js');
 
+// Subscribe to Shelly devices' native MQTT status/LWT topics and republish
+// canonical state (Stage 2 of the MQTT plan). Requires mqttTopics.js, which
+// pulls in config via require('../index') -- must load after this module has
+// exported its config above, same rule as every other src/ module.
+const { startShellyListener } = require('./src/lightingShelly.js');
+startShellyListener();
+
 // Rebuild Alexa Triggers Config File
 const alexa = require('./src/alexaTriggers');
 alexa.buildTriggers();
