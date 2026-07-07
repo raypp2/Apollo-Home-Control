@@ -115,11 +115,14 @@ function send_somfy_command (address, id, command, operation_num) {
   // so this is acceptable for now -- see
   // documentation/mqtt-implementation-detail.md Stage 2, ESPSomfy subsection.
   let expectedPosition;
-  if (command === "ON") {
+  if (command === "ON" || !command) {
+      // A falsy command means the dispatch above assumed ON/down (see the
+      // "When no command is passed" branch) -- mirror that here, otherwise
+      // the optimistic state would say open while the shade closes.
       expectedPosition = 100;
   } else if (command === "OFF") {
       expectedPosition = 0;
-  } else if (!isNaN(command) && command !== undefined && command !== null && command !== "") {
+  } else if (!isNaN(command)) {
       expectedPosition = Number(command);
   } else {
       // STOP or unrecognized -- resulting position is unknown, skip publish.
