@@ -8,7 +8,8 @@
  * @description  Monitors the status of devices on Insteon.
  *               This status polling is used to update the status of the device in the UI,
  *               and (per documentation/mqtt-implementation-detail.md Stage 3) publishes
- *               canonical MQTT state for event-sourced hub 'command' broadcasts.
+ *               canonical MQTT state for both event-sourced (hub 'command' broadcasts) and
+ *               poll-sourced updates.
  *
  *               KeyPad Linc Features
  *               Responds to a Keypad Linc button press by executing a command.
@@ -21,7 +22,7 @@
  *
  *               Risk note (issue #2, closed): the `home-controller` package's hub
  *               connection has historically been a crash source. Every new hub
- *               interaction added here (event handling) is wrapped so a
+ *               interaction added here (event handling, polling) is wrapped so a
  *               throw can never escape and take down the process or the existing
  *               keypad-press dispatch.
  *
@@ -102,7 +103,7 @@ function _resetKeypadStateForTesting() {
 }
 
 var Insteon = require('home-controller').Insteon;
-var hub = new Insteon();
+let hub = new Insteon();
 
 var config = {
   host: process.env.INSTEON_HUB_IP,
@@ -110,6 +111,41 @@ var config = {
   user: process.env.INSTEON_USERNAME,
   password: process.env.INSTEON_PASSWORD
 };
+
+//### Variables for outbound-command coordination (staggered polling)
+// Shared with lightingInsteon.js via noteCommandSent() -- the hub has a small
+// command buffer, so an outbound device/scene command and the poll sweep must
+// never overlap. See startInsteonPolling() below for the pause window.
+let lastCommandAt = 0;
+
+/**
+ * Called by lightingInsteon.js whenever an outbound Insteon command is sent
+ * (device or scene). Used to pause the poll sweep so it never contends with
+ * the hub's small command buffer right after a real command went out.
+ */
+function noteCommandSent() {
+  lastCommandAt = Date.now();
+}
+
+/**
+ * Exposes the same hub connection used by the poll sweep so lightingInsteon.js
+ * can schedule its post-command verification poll without opening a second
+ * connection to the hub.
+ * @returns {object} the home-controller Insteon hub instance
+ */
+function getHub() {
+  return hub;
+}
+
+/**
+ * Test-only hook: swaps in a fake hub (e.g. `{ light: () => ({ level: () =>
+ * Promise.resolve(...) }) }`) so pollTick()/getHub() can be exercised without
+ * a real home-controller connection. Never called from production code.
+ * @param {object} fakeHub
+ */
+function _setHub(fakeHub) {
+  hub = fakeHub;
+}
 
 
 function startListener(handleRequest) {
@@ -143,10 +179,9 @@ function startListener(handleRequest) {
         }
     });
 
-    // insteon_setup_devices();  // Polls and creates listeners for devices to keep status updated on interfaces
-    // holding until web interface is fixed.
-    // Might create issues with Keypad watchers
-    // Replaced by the staggered round-robin poll sweep in a later commit.
+    // Staggered round-robin polling (Stage 3). Only starts once the hub has
+    // actually connected, so it never runs against a failed connection.
+    startInsteonPolling();
     });
 
 }
@@ -212,6 +247,140 @@ function findLightByAddress(address) {
 
 
 /*
+############# INSTEON MODULE FOR STAGGERED POLLING
+
+Bulk-polling every device at once (the old, disabled insteon_setup_devices())
+overflows the 2245 hub's small command buffer -- that is why it was disabled.
+Instead, round-robin ONE device every 5s so a full sweep of a dozen lights
+takes about a minute, and never contend with an outbound command (see
+lastCommandAt / noteCommandSent above).
+*/
+
+const POLL_INTERVAL_MS = 5000;
+const COMMAND_QUIET_MS = 10000; // pause polling for this long after any outbound command
+const POLL_ERROR_BACKOFF_MS = 60000;
+
+let pollRotationIndex = 0;
+let pollTimer = null;
+let pollInFlight = false; // true while a .level() call is outstanding -- prevents a hung poll from stacking
+let pollPausedUntil = 0; // hub-outage backoff (Date.now() timestamp)
+let loggedPollError = false; // log a poll failure once per outage, not once per subsequent tick
+
+/**
+ * Returns the list of insteon-type lights eligible for round-robin polling.
+ * Recomputed each tick (cheap; `lights_new` is a small array) so the rotation
+ * naturally adapts if config were ever reloaded.
+ * @returns {Array}
+ */
+function insteonLights() {
+    return lights_new.filter((entry) => entry.type === 'insteon' && entry.address);
+}
+
+/**
+ * Test-only hook: resets all module-level poll scheduling state (rotation
+ * index, in-flight flag, error backoff window/flag, lastCommandAt) so tests
+ * don't leak state into each other. Never called from production code.
+ */
+function _resetPollStateForTesting() {
+    pollRotationIndex = 0;
+    pollInFlight = false;
+    pollPausedUntil = 0;
+    loggedPollError = false;
+    lastCommandAt = 0;
+}
+
+/**
+ * One round-robin polling tick: polls a single insteon light's level via the
+ * hub, publishes poll-sourced canonical state, and syncs the in-memory entry.
+ * Skips (without advancing the rotation) if:
+ *  - polling is currently paused due to a recent outbound command, or a prior
+ *    hub-error backoff window, or
+ *  - the previous poll call hasn't settled yet (never stack concurrent polls).
+ */
+function pollTick() {
+    ensureInit();
+
+    const targets = insteonLights();
+    if (targets.length === 0) {
+        return;
+    }
+
+    if (Date.now() < pollPausedUntil) {
+        return; // hub-outage backoff still in effect
+    }
+
+    if (Date.now() - lastCommandAt < COMMAND_QUIET_MS) {
+        return; // an outbound command just used the hub's buffer -- don't contend with it
+    }
+
+    if (pollInFlight) {
+        return; // previous poll hasn't settled -- never stack concurrent hub calls
+    }
+
+    if (pollRotationIndex >= targets.length) {
+        pollRotationIndex = 0;
+    }
+    const entry = targets[pollRotationIndex];
+    pollRotationIndex = (pollRotationIndex + 1) % targets.length;
+
+    pollInFlight = true;
+
+    let result;
+    try {
+        result = hub.light(entry.address).level();
+    } catch (err) {
+        pollInFlight = false;
+        handlePollError(err);
+        return;
+    }
+
+    Promise.resolve(result).then(function (lvl) {
+        pollInFlight = false;
+        loggedPollError = false;
+
+        const level = (typeof lvl === 'number') ? lvl : 0;
+        const power = level > 0 ? 'ON' : 'OFF';
+
+        mqttTopics.publishState(entry, { power, brightness: level }, 'poll');
+        entry.checked = (power === 'ON');
+        entry.status = level;
+    }).catch(function (err) {
+        pollInFlight = false;
+        handlePollError(err);
+    });
+}
+
+/**
+ * Logs a poll failure exactly once per outage (not per subsequent tick) and
+ * sets a 60s pause on all polling -- hub-outage backoff, per the risk note
+ * about home-controller's hub connection being a historic crash source.
+ * @param {Error} err
+ */
+function handlePollError(err) {
+    if (!loggedPollError) {
+        loggedPollError = true;
+        console.log('Insteon poll error: %s -- pausing polling for %dms', err && err.message, POLL_ERROR_BACKOFF_MS);
+    }
+    pollPausedUntil = Date.now() + POLL_ERROR_BACKOFF_MS;
+}
+
+/**
+ * Starts the staggered round-robin poll sweep. Called from startListener()
+ * after the hub connects, so it never runs against a failed connection. Safe
+ * to call more than once (e.g. in tests) -- clears any prior timer first.
+ */
+function startInsteonPolling() {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+    }
+    pollTimer = setInterval(pollTick, POLL_INTERVAL_MS);
+    if (typeof pollTimer.unref === 'function') {
+        pollTimer.unref();
+    }
+}
+
+
+/*
 ############# INSTEON MODULE FOR RECEIVING BUTTON COMMANDS
 
 */
@@ -264,9 +433,15 @@ function isKeypadPress(info,handleRequest) {
 
 module.exports = {
     startListener,
+    noteCommandSent,
+    getHub,
     _handleHubCommand,
     isKeypadPress,
+    pollTick,
+    startInsteonPolling,
     _init,
+    _setHub,
+    _resetPollStateForTesting,
     _setKeypadDedupeWindowForTesting,
     _resetKeypadStateForTesting,
     };
