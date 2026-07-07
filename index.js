@@ -100,6 +100,7 @@ if (DRY_RUN) {
     console.log("###### APOLLO_DRY_RUN=1 -- SQS Listener NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- Insteon Listener NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- Hue SSE Listener NOT started (dry-run) ######");
+    console.log("###### APOLLO_DRY_RUN=1 -- IP device power poller NOT started (dry-run) ######");
 } else {
     // Start SQS Listener
     const sqsListener = require('./src/sqsListener');
@@ -116,6 +117,15 @@ if (DRY_RUN) {
     // connection to real hardware, so it's skipped in dry-run.
     const hueListener = require('./src/lightingPhilipsHueListener');
     hueListener.startListener();
+
+    // Periodic power-state poll for ip_control devices (Stage 5 of the MQTT
+    // plan, issue #13) -- publishes source:'poll' power state every 60s
+    // through the same persistent connection commands use, so the dashboard
+    // has real projector/receiver state between commands. No-ops on its own
+    // if ITACH_PERSISTENT_CONNECTIONS=false; gated here the same as the other
+    // listeners above since it holds open connections to real hardware.
+    const tcpServers = require('./src/tcpServers');
+    tcpServers.startIpPowerPoller();
 }
 
 // Health monitor (Stage 8, issue #20) -- last startup step since it observes
