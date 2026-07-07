@@ -123,6 +123,16 @@ if (DRY_RUN) {
 // Read-only: runs in dry-run too, since it never sends device commands.
 require('./src/healthMonitor').start();
 
+// Spotify now-playing publisher (Stage 9, issue #22) -- opt-in via
+// SPOTIFY_NOW_PLAYING=1 since it costs a Spotify API call every 10s around
+// the clock; not worth running until Stage 11 puts a now-playing card on the
+// dashboard. Also skipped in dry-run, same as the other outbound pollers.
+if (process.env.SPOTIFY_NOW_PLAYING === '1' && !DRY_RUN) {
+    const { startNowPlayingPublisher } = require('./src/spotify');
+    startNowPlayingPublisher();
+    console.log('###### SPOTIFY_NOW_PLAYING=1 -- now-playing publisher started ######');
+}
+
 // Catch unhandled errors to prevent a single ecosystem failure from crashing the entire bridge
 process.on('uncaughtException', function(err) {
     console.log('Uncaught exception: %s', err.message);
