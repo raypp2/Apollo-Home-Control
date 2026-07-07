@@ -191,7 +191,9 @@ function send_serial_command(iTach_address, serial_cmd, debug_id){
 		return _legacy_send_serial_command(iTach_address, serial_cmd, debug_id);
 	}
 
-	const conn = getConnection(iTach_address, SERIAL_PORT, { name: `${iTach_address}:${SERIAL_PORT}` });
+	// spacingMs 1000 preserves the legacy iTach chains' 1000ms inter-command
+	// gap (1000*(j+1) setTimeouts) -- IR/serial hardware timing was tuned to it.
+	const conn = getConnection(iTach_address, SERIAL_PORT, { name: `${iTach_address}:${SERIAL_PORT}`, spacingMs: 1000 });
 	registerStatusPublisher(conn, iTach_address, SERIAL_PORT);
 
 	// Raw write, no CRLF, no response expected -- matches the legacy serial
@@ -219,7 +221,7 @@ function send_cc_command(iTach_address, serial_cmd, debug_id){
 		return _legacy_send_cc_command(iTach_address, serial_cmd, debug_id);
 	}
 
-	const conn = getConnection(iTach_address, IR_CC_PORT, { name: `${iTach_address}:${IR_CC_PORT}` });
+	const conn = getConnection(iTach_address, IR_CC_PORT, { name: `${iTach_address}:${IR_CC_PORT}`, spacingMs: 1000 });
 	registerStatusPublisher(conn, iTach_address, IR_CC_PORT);
 
 	return sendFramed(conn, debug_id, serial_cmd, { suffix: '\r\n', expectResponse: true });
@@ -246,7 +248,7 @@ function send_ir_command(iTach_address, serial_cmd, debug_id){
 		return _legacy_send_ir_command(iTach_address, serial_cmd, debug_id);
 	}
 
-	const conn = getConnection(iTach_address, IR_CC_PORT, { name: `${iTach_address}:${IR_CC_PORT}` });
+	const conn = getConnection(iTach_address, IR_CC_PORT, { name: `${iTach_address}:${IR_CC_PORT}`, spacingMs: 1000 });
 	registerStatusPublisher(conn, iTach_address, IR_CC_PORT);
 
 	return sendFramed(conn, debug_id, serial_cmd, { suffix: '\r\n', expectResponse: true });
