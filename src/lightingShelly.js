@@ -12,7 +12,15 @@
 
 const http = require('http');
 
+const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
+
 function shelly_command(operation_num, address, command) {
+
+    if (DRY_RUN) {
+        console.log("%d - DRY RUN, would send Shelly command: %s to %s", operation_num, command, address);
+        return;
+    }
+
     let urlCommand;
 
     switch (command) {

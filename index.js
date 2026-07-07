@@ -71,15 +71,25 @@ alexa.buildTriggers();
 
 // Start Web & API Servers
 const webServer = require('./src/webServer');
-webServer.startServer(); 
+webServer.startServer();
 
-// Start SQS Listener
-const sqsListener = require('./src/sqsListener');  
-sqsListener.startListener();
+const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
 
-// Start Insteon Listener for KeyPad Presses
-const insteonListener = require('./src/lightingInsteonListener');
-insteonListener.startListener(handleRequest);
+if (DRY_RUN) {
+    // Skip requiring sqsListener entirely -- it has a module-level env check that
+    // calls process.exit(1) if AWS env vars aren't set, so a conditional require
+    // (not just skipping startListener()) is needed here.
+    console.log("###### APOLLO_DRY_RUN=1 -- SQS Listener NOT started (dry-run) ######");
+    console.log("###### APOLLO_DRY_RUN=1 -- Insteon Listener NOT started (dry-run) ######");
+} else {
+    // Start SQS Listener
+    const sqsListener = require('./src/sqsListener');
+    sqsListener.startListener();
+
+    // Start Insteon Listener for KeyPad Presses
+    const insteonListener = require('./src/lightingInsteonListener');
+    insteonListener.startListener(handleRequest);
+}
 
 // Catch unhandled errors to prevent a single ecosystem failure from crashing the entire bridge
 process.on('uncaughtException', function(err) {

@@ -37,7 +37,14 @@ var spotifyApi = new SpotifyWebApi({
     redirectUri: process.env.spotifyRedirectUri
 });
 
+const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
+
 function spotifySwitchPlay(deviceName, context_uri, debug_id) {
+
+	if (DRY_RUN) {
+		console.log("%d - DRY RUN, would switch Spotify playback to device: %s (context: %s)", debug_id, deviceName, context_uri);
+		return;
+	}
 
 	// ** Never uncomment these lines unless for debugging. They write sensitive data to the console.
     // console.log("%d - Credentials", debug_id, `Client ID: ${process.env.spotifyClientId}`);
@@ -132,6 +139,12 @@ function spotifySwitchPlay(deviceName, context_uri, debug_id) {
 }
 
 function spotifyStopPlay(deviceName, debug_id) {
+
+    if (DRY_RUN) {
+        console.log("%d - DRY RUN, would stop Spotify playback on device: %s", debug_id, deviceName);
+        return;
+    }
+
     spotifyApi.setAccessToken(process.env.spotifyRefreshToken);
     spotifyApi.setCredentials({
         'refreshToken': process.env.spotifyRefreshToken

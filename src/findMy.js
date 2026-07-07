@@ -23,7 +23,14 @@ var icloud = require("find-my-iphone").findmyphone;
 icloud.apple_id = process.env.icloudUsername;
 icloud.password = process.env.icloudPassword;
 
+const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
+
 function find_my_iphone_alert(deviceID, debug_id){
+
+	if (DRY_RUN) {
+		console.log("%d - DRY RUN, would send Find My iPhone alert to device: %s", debug_id, deviceID);
+		return;
+	}
 
 	icloud.getDevices(function(error, devices) {
 

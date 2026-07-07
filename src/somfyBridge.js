@@ -19,7 +19,14 @@
 
 const http = require('http');
 
+const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
+
 function send_somfy_command (address, id, command, operation_num) {
+
+  if (DRY_RUN) {
+    console.log("%d - DRY RUN, would send Somfy command: %s to shade %s @ %s", operation_num, command, id, address);
+    return;
+  }
 
   let urlCommand;
 

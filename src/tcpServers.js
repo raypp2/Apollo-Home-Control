@@ -20,6 +20,7 @@
  * 
  */
 
+const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
 
 /**
  * Sends a command to a device over TCP/IP and checks for power status if specified.
@@ -29,6 +30,11 @@
  * @param {number} debug_id - A unique identifier for debugging purposes.
  */
 function send_ip_command(debug_id, device_info, device_cmd, check_for_power){
+
+	if (DRY_RUN) {
+		console.log("%d - DRY RUN, would send IP command: %s to %s:%s", debug_id, device_cmd, device_info.address, device_info.port);
+		return;
+	}
 
 	var net = require('net');
 	var client = new net.Socket();
