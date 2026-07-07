@@ -30,10 +30,24 @@ var hub_command = {
 };
 
 
-// Needed exclusively for insteon_button_blink
-const { lightingScenes }
-        = require('../index');
-const lighting_scenes = lightingScenes;
+const mqttTopics = require('./mqttTopics');
+
+// Single verification poll, scheduled 5s after an optimistic device-command
+// publish (Stage 3, issue #11). Long enough for the hub to have actually
+// applied the command; short enough to correct a wrong optimistic guess
+// before it's stale.
+const VERIFY_POLL_DELAY_MS = 5000;
+const BRIGHTNESS_MISMATCH_THRESHOLD = 5;
+
+/**
+ * Tells the listener module's poll sweep to back off -- lazily required
+ * (function scope, not module scope) since lighting.js is the only place
+ * that currently requires both modules, and requiring lazily here avoids any
+ * dependency on which of the two modules happens to load first.
+ */
+function noteCommandSent() {
+    require('./lightingInsteonListener').noteCommandSent();
+}
 
 
 /* ####### INSTEON SCENE COMMAND
@@ -69,6 +83,12 @@ function insteon_scene_command (operation_num, scene, insteon_command) {
 
     hub_command['path'] = '/0?' + insteon_command + scene + '=I=0';
 
+    // No optimistic MQTT publish here -- a scene fans out to an unknown set of
+    // member devices, so there is no single entry to publish state for; the
+    // poll sweep in lightingInsteonListener.js picks up the resulting changes
+    // on its own. It still occupies the hub's command buffer, though, so the
+    // poll sweep must still be told to back off.
+    noteCommandSent();
 
     insteon_send_command(operation_num, hub_command);
 }
@@ -101,6 +121,11 @@ function insteon_device_command(operation_num, address, insteon_command) {
     E6        90%
     FF        100%
     */
+
+    // Capture the semantic meaning of the command BEFORE it gets overwritten
+    // below with its encoded hex form -- this is what optimistic state
+    // publishing needs, and it's only available here.
+    const optimisticState = optimisticStateFor(insteon_command);
 
     // If a number is provided, it should dim to that level
     if (!isNaN(insteon_command)) {
@@ -136,8 +161,127 @@ function insteon_device_command(operation_num, address, insteon_command) {
 
     hub_command['path'] = '/3?0262' + address + '0F' + insteon_command + '=I=3';
 
+    // Occupies the hub's command buffer -- tell the poll sweep to back off,
+    // whether or not we end up publishing optimistic state below.
+    noteCommandSent();
+
     insteon_send_command(operation_num, hub_command);
 
+    if (optimisticState) {
+        publishOptimisticState(operation_num, address, optimisticState);
+    }
+
+}
+
+/**
+ * Maps the semantic (pre-encoding) device command to the optimistic state we
+ * can immediately publish, or null for commands whose result is unknown
+ * (relative BRIGHTEN/DIM) or unrecognized (encoding already logs those).
+ * @param {string|number} semanticCommand - e.g. "ON", "OFF", "FAST-ON", or a 0-100 level
+ * @returns {{power: string, brightness: number}|null}
+ */
+function optimisticStateFor(semanticCommand) {
+    if (!isNaN(semanticCommand)) {
+        const level = Number(semanticCommand);
+        return { power: level > 0 ? 'ON' : 'OFF', brightness: level };
+    }
+
+    switch (semanticCommand) {
+        case "ON":
+        case "FAST-ON":
+            return { power: 'ON', brightness: 100 };
+        case "OFF":
+        case "FAST-OFF":
+            return { power: 'OFF', brightness: 0 };
+        case "BRIGHTEN":
+        case "DIM":
+        default:
+            // BRIGHTEN/DIM are relative -- the resulting level is unknown until
+            // polled, so skip the optimistic publish. Unrecognized commands
+            // already returned earlier in insteon_device_command.
+            return null;
+    }
+}
+
+/**
+ * Publishes optimistic (source:"command") state immediately, then schedules a
+ * single verification poll 5s later. If the poll disagrees (different power,
+ * or brightness differing by more than 5 points), the polled truth is
+ * published instead (source:"poll"). Errors during verification are logged
+ * and never thrown. Skipped entirely in DRY_RUN, since there is no real hub
+ * connection to verify against.
+ * @param {number} operation_num
+ * @param {string} address - hex device address
+ * @param {{power: string, brightness: number}} state
+ */
+function publishOptimisticState(operation_num, address, state) {
+    const entry = findLightByAddress(address);
+    if (!entry) {
+        return;
+    }
+
+    mqttTopics.publishState(entry, state, 'command');
+
+    if (DRY_RUN) {
+        return; // No real hub connection to verify against.
+    }
+
+    setTimeout(function () {
+        verifyDeviceState(operation_num, entry, state);
+    }, VERIFY_POLL_DELAY_MS);
+}
+
+/**
+ * Looks up a lights.json entry of type "insteon" by its hex address, matched
+ * case-insensitively. Lazily requires ../index (same load-order rule as every
+ * other src/ module) and lightingInsteonListener.js (for hub access) only
+ * when actually needed, to avoid any load-order issues at require time.
+ * @param {string} address
+ * @returns {object|null}
+ */
+function findLightByAddress(address) {
+    const index = require('../index');
+    const lights = index.lights || [];
+    const upperAddress = String(address).toUpperCase();
+    for (const light of lights) {
+        if (light.type === 'insteon' && light.address && light.address.toUpperCase() === upperAddress) {
+            return light;
+        }
+    }
+    return null;
+}
+
+/**
+ * Polls the device's actual level via the hub (reusing the listener module's
+ * connection -- see getHub()) and, if it disagrees with the optimistic guess,
+ * publishes the polled truth. Never throws -- logs and returns on any error.
+ * @param {number} operation_num
+ * @param {object} entry
+ * @param {{power: string, brightness: number}} optimisticState
+ */
+function verifyDeviceState(operation_num, entry, optimisticState) {
+    let hub;
+    try {
+        hub = require('./lightingInsteonListener').getHub();
+        const result = hub.light(entry.address).level();
+        Promise.resolve(result).then(function (lvl) {
+            const level = (typeof lvl === 'number') ? lvl : 0;
+            const power = level > 0 ? 'ON' : 'OFF';
+
+            const powerMismatch = power !== optimisticState.power;
+            const brightnessMismatch = Math.abs(level - optimisticState.brightness) > BRIGHTNESS_MISMATCH_THRESHOLD;
+
+            if (powerMismatch || brightnessMismatch) {
+                mqttTopics.publishState(entry, { power, brightness: level }, 'poll');
+                entry.checked = (power === 'ON');
+                entry.status = level;
+            }
+        }).catch(function (err) {
+            console.log("%d - Insteon verification poll error: %s", operation_num, err.message);
+        });
+    } catch (err) {
+        console.log("%d - Insteon verification poll error: %s", operation_num, err.message);
+    }
 }
 
 
@@ -189,6 +333,12 @@ insteon_button_blink(operation_num,'button-a');
 */
 function insteon_button_blink(operation_num, sceneID) {
 
+    // Lazily required (function scope, not module scope) so merely requiring
+    // this module doesn't boot index.js -- same load-order rule as
+    // findLightByAddress() below.
+    const { lightingScenes } = require('../index');
+    const lighting_scenes = lightingScenes;
+
     var sceneInsteon = false;
     for(var i = 0; i < lighting_scenes.length; i++) {
         if(lighting_scenes[i].id == sceneID) {
@@ -237,5 +387,6 @@ function levelToHexByte(level) {
 module.exports = {
     insteon_device_command,
     insteon_scene_command,
-    insteon_button_blink
+    insteon_button_blink,
+    optimisticStateFor,
   };
