@@ -13,6 +13,9 @@
  */
 
 const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
+const util = require('node:util');
 const { test } = require('node:test');
 
 const { buildTriggersArray } = require('../src/alexaTriggers');
@@ -141,5 +144,101 @@ test('lightingScenes, macros, and deviceScenes never get a statefulMqtt flag (sc
     assert.strictEqual(triggers.length, 3);
     for (const trigger of triggers) {
         assert.strictEqual('statefulMqtt' in trigger, false);
+    }
+});
+
+// --- buildTriggers(): the fs-writing wrapper (startup-race regression) ---
+//
+// buildTriggers() requires('../index') at call time -- see the doc comment on
+// that function -- so exercising it for real would boot Apollo's whole
+// config-loading chain (webServer, SQS listener, MQTT client, ...), which is
+// exactly what this file's other tests avoid by testing the pure
+// buildTriggersArray() instead. To test the fs-writing behavior in isolation,
+// these tests pre-seed require.cache for the resolved '../index' path with a
+// minimal fixture module before calling buildTriggers(), and restore the
+// original cache entry (and, for the first test, the original
+// config/triggers.json content) afterward.
+
+const INDEX_PATH = require.resolve('../index');
+const TRIGGERS_JSON_PATH = path.join(__dirname, '..', 'config', 'triggers.json');
+
+function withFakeIndexExports(fakeExports, fn) {
+    const hadCachedIndex = Object.prototype.hasOwnProperty.call(require.cache, INDEX_PATH);
+    const originalCachedIndex = require.cache[INDEX_PATH];
+    require.cache[INDEX_PATH] = { id: INDEX_PATH, filename: INDEX_PATH, loaded: true, exports: fakeExports };
+    try {
+        fn();
+    } finally {
+        if (hadCachedIndex) {
+            require.cache[INDEX_PATH] = originalCachedIndex;
+        } else {
+            delete require.cache[INDEX_PATH];
+        }
+    }
+}
+
+test('buildTriggers() writes config/triggers.json synchronously -- the file is complete and parseable the instant the call returns', () => {
+    const { buildTriggers } = require('../src/alexaTriggers');
+
+    const hadOriginal = fs.existsSync(TRIGGERS_JSON_PATH);
+    const originalContent = hadOriginal ? fs.readFileSync(TRIGGERS_JSON_PATH, 'utf8') : null;
+
+    const fixtureDevice = {
+        id: 'testDevice',
+        alexa: { invocations: ['Test Device'], displayCategories: ['SWITCH'] },
+    };
+
+    try {
+        withFakeIndexExports(
+            { devices: [fixtureDevice], deviceScenes: [], lights: [], lightingScenes: [], macros: [] },
+            () => buildTriggers()
+        );
+
+        // No setImmediate/process.nextTick/await here -- reading the file
+        // synchronously right after buildTriggers() returns is exactly the
+        // invariant the startup-race fix depends on: index.js calls
+        // buildTriggers() and then, later in the same synchronous startup
+        // sequence, mqttCommandListener.js's ensureInit() reads this same
+        // file back with fs.readFileSync.
+        const raw = fs.readFileSync(TRIGGERS_JSON_PATH, 'utf8');
+        const parsed = JSON.parse(raw);
+        assert.strictEqual(Array.isArray(parsed), true);
+        assert.strictEqual(parsed.length, 1);
+        assert.strictEqual(parsed[0].endpointId, 'testDevice');
+        assert.strictEqual(parsed[0].apiModule, 'DEVICES');
+    } finally {
+        if (hadOriginal) {
+            fs.writeFileSync(TRIGGERS_JSON_PATH, originalContent);
+        } else {
+            fs.rmSync(TRIGGERS_JSON_PATH, { force: true });
+        }
+    }
+});
+
+test('buildTriggers() logs and does not throw if the write fails -- a disk error must not crash startup', () => {
+    const { buildTriggers } = require('../src/alexaTriggers');
+
+    const originalWriteFileSync = fs.writeFileSync;
+    const originalConsoleError = console.error;
+    const errors = [];
+    fs.writeFileSync = () => {
+        throw new Error('simulated disk failure');
+    };
+    console.error = (...args) => errors.push(util.format(...args));
+
+    try {
+        withFakeIndexExports(
+            { devices: [], deviceScenes: [], lights: [], lightingScenes: [], macros: [] },
+            () => {
+                assert.doesNotThrow(() => buildTriggers());
+            }
+        );
+        assert.ok(
+            errors.some((l) => l.includes('Error writing to triggers.json')),
+            `expected the "Error writing to triggers.json" log line, got: ${JSON.stringify(errors)}`
+        );
+    } finally {
+        fs.writeFileSync = originalWriteFileSync;
+        console.error = originalConsoleError;
     }
 });
