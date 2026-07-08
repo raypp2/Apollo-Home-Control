@@ -66,6 +66,18 @@ module.exports = {
 const mqttClient = require('./src/mqttClient');
 mqttClient.connect();
 
+// Orphan MQTT retained-state topic cleanup (live-incident hardening fix) --
+// sweeps apollo/+/+/+/state for retained topics that no longer correspond to
+// any configured light/device (e.g. removed from lights.json/devices.json)
+// and clears them so healthMonitor.js doesn't seed a permanent ghost
+// stale/degraded entry from their retained replay. Runs once per process
+// lifetime; safe in both dry-run and live mode since it only touches local
+// MQTT broker retained-message bookkeeping, not hardware. Fire-and-forget --
+// doesn't block any other startup step below. See src/mqttOrphanCleanup.js.
+require('./src/mqttOrphanCleanup').cleanupOrphanedStateTopics().catch((err) => {
+    console.log('Orphan topic cleanup: unexpected rejection: %s', err && err.message);
+});
+
 // Orchestration Handlers
 const { handleRequest }
 = require('./src/handler.js');
