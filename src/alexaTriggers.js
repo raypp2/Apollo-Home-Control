@@ -228,6 +228,17 @@ function buildTriggersArray({ devices, deviceScenes, lights, lightingScenes, mac
  * never boots the whole Apollo config-loading chain. Production's only
  * caller (index.js) already invokes this after index.js has finished
  * exporting, same load-order rule as every other src/ module.
+ *
+ * The write is synchronous (fs.writeFileSync) rather than fs.writeFile --
+ * deliberately. index.js calls buildTriggers() synchronously at startup,
+ * immediately followed (same synchronous call stack) by
+ * mqttCommandListener.js's startCommandListener() -> ensureInit(), which
+ * reads config/triggers.json back with fs.readFileSync. With an async write,
+ * that later synchronous read can race ahead of the write actually landing
+ * on disk, hitting a truncated/empty file. Writing synchronously guarantees
+ * triggers.json is fully flushed before buildTriggers() returns, so every
+ * later synchronous startup step sees the complete file. One small JSON
+ * file, once at startup -- the added latency is negligible.
  */
 function buildTriggers(){
 
@@ -239,13 +250,16 @@ function buildTriggers(){
     let data = JSON.stringify(triggersBuild, null, 4);
     // console.log(data);
 
-    fs.writeFile("./config/triggers.json", data, (err) => {
-        if (err) {
-            console.error('Error writing to triggers.json:', err);
-        } else {
-            console.log(`Updated triggers.json`);
-        }
-    });
+    try {
+        fs.writeFileSync("./config/triggers.json", data);
+        console.log(`Updated triggers.json`);
+    } catch (err) {
+        // Keep startup resilient -- a write failure here must not throw out
+        // of buildTriggers() and crash Apollo's boot sequence (same
+        // graceful-degradation intent as the previous async callback's
+        // error branch).
+        console.error('Error writing to triggers.json:', err);
+    }
 
 }
 

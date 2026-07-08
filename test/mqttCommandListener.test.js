@@ -18,7 +18,7 @@ const assert = require('node:assert');
 const util = require('node:util');
 const { test, beforeEach } = require('node:test');
 
-const { _init, _handleDelta } = require('../src/mqttCommandListener');
+const { _init, _handleDelta, startCommandListener } = require('../src/mqttCommandListener');
 
 // --- Fixture triggers (mirrors real config/triggers.json shapes) ---
 
@@ -234,4 +234,97 @@ test('COMMAND_SOURCE=shadow: the comparison line is logged WITHOUT the "(log-onl
     assert.strictEqual(calls.length, 1);
     assert.ok(logs.some((l) => l.startsWith('SHADOW-CMD:') && l.includes('kitchenLight')));
     assert.ok(!logs.some((l) => l.includes('(log-only)')));
+});
+
+// --- Regression: a failed triggers.json load must not be cached as empty ---
+//
+// Reproduces the startup race this module is being fixed for: alexaTriggers.js
+// used to write config/triggers.json asynchronously, so the very first
+// synchronous read here (via ensureInit(), from index.js's startup sequence)
+// could race ahead of the write and see a truncated/missing file. The bug was
+// that a failed read got cached as a permanently-empty endpoint index --
+// `initialized = true` was set unconditionally, so no later delta ever got a
+// chance to re-read the (by-then complete) file. This test drives the real
+// ensureInit()/loadTriggersIfNeeded() path (via _init's `diskLoader` seam,
+// since the normal `_init(...)` shortcut bypasses ensureInit entirely) to
+// prove: a delta during the failure window resolves nothing, but a delta
+// after triggers.json becomes readable resolves and executes correctly --
+// without a restart -- and the one-time COMMAND_SOURCE startup log still
+// fires exactly once despite the retry.
+
+/**
+ * A controllable stand-in for loadTriggersFromDisk(): returns null (read
+ * failure) until recover() is called, then returns a real endpointId -> trigger
+ * Map built from `trigger`, mirroring loadTriggersFromDisk()'s success/failure
+ * contract (Map on success, null on failure).
+ */
+function makeFlakyDiskLoader(trigger) {
+    let succeed = false;
+    return {
+        loader: () => {
+            if (!succeed) {
+                return null;
+            }
+            const map = new Map();
+            map.set(trigger.endpointId, trigger);
+            return map;
+        },
+        recover: () => {
+            succeed = true;
+        },
+    };
+}
+
+test('a triggers.json load that fails on startup is retried per-delta (not cached as empty), and COMMAND_SOURCE logs exactly once', () => {
+    const flaky = makeFlakyDiskLoader(DIMMABLE_LIGHT);
+    calls = [];
+
+    const logs = [];
+    const originalLog = console.log;
+    console.log = (...args) => logs.push(util.format(...args));
+
+    const hadCommandSource = Object.prototype.hasOwnProperty.call(process.env, 'COMMAND_SOURCE');
+    const originalCommandSource = process.env.COMMAND_SOURCE;
+    process.env.COMMAND_SOURCE = 'shadow';
+
+    try {
+        // diskLoader mode leaves initialized/triggersLoaded false so the real
+        // ensureInit() (subscribe + COMMAND_SOURCE log + triggers load) runs
+        // for real via startCommandListener(), instead of being short-circuited
+        // the way the plain _init({ triggers: [...] }) fixture path is.
+        _init({ handleRequest: fakeHandleRequest, diskLoader: flaky.loader });
+        startCommandListener(fakeHandleRequest);
+
+        // Startup-time read fails (simulates the truncated/missing file mid-write):
+        // the endpoint can't resolve, so nothing executes.
+        _handleDelta('$aws/things/apollo-kitchenLight/shadow/update/delta', deltaPayload({ power: 'ON' }, { version: 1 }));
+        assert.strictEqual(calls.length, 0, 'must not execute while triggers.json is unreadable');
+
+        // triggers.json is now complete on disk (e.g. alexaTriggers.js's
+        // synchronous write has landed).
+        flaky.recover();
+
+        // A later delta retries the load, resolves the endpoint, and executes --
+        // proving the earlier failure was not cached as a permanent empty index.
+        _handleDelta('$aws/things/apollo-kitchenLight/shadow/update/delta', deltaPayload({ power: 'OFF' }, { version: 2 }));
+        assert.deepStrictEqual(
+            calls,
+            ['/LIGHTS/kitchenLight/off'],
+            'must resolve and execute once triggers.json becomes readable, without needing a restart'
+        );
+    } finally {
+        console.log = originalLog;
+        if (hadCommandSource) {
+            process.env.COMMAND_SOURCE = originalCommandSource;
+        } else {
+            delete process.env.COMMAND_SOURCE;
+        }
+    }
+
+    const commandSourceLogs = logs.filter((l) => l.includes('COMMAND_SOURCE='));
+    assert.strictEqual(
+        commandSourceLogs.length,
+        1,
+        `COMMAND_SOURCE startup log must fire exactly once across retries, got: ${JSON.stringify(commandSourceLogs)}`
+    );
 });
