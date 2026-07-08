@@ -57,6 +57,19 @@ let doHandleRequest;
 let triggersByEndpointId = new Map();
 let commandSourceMode = 'sqs';
 let initialized = false;
+// Separate from `initialized` -- see loadTriggersIfNeeded()/loadTriggersFromDisk()
+// below. `initialized` gates the one-time subscribe + COMMAND_SOURCE log;
+// this gates only whether the triggers.json load succeeded, so a failed
+// first read (e.g. a startup race with alexaTriggers.js's write) gets
+// retried on the next delta instead of being cached as a permanently empty
+// index.
+let triggersLoaded = false;
+// Function pointer so tests can substitute a controllable fake in place of
+// the real fs.readFileSync(TRIGGERS_PATH) read -- see _init()'s `diskLoader`
+// param and loadTriggersIfNeeded() below. Defaults to the real
+// loadTriggersFromDisk() (function declarations hoist, so this is valid even
+// though loadTriggersFromDisk is defined later in the file).
+let doLoadTriggersFromDisk = loadTriggersFromDisk;
 
 // Shadow-delta dedupe (CRITICAL, see module doc): deltas re-fire on every
 // reported update while desired remains divergent (e.g. an unreachable
@@ -88,7 +101,15 @@ function buildIndex(triggers) {
  * use, per index.js's require order) -- read lazily via fs+JSON.parse rather
  * than watching for changes, since triggers.json only changes when Apollo
  * itself restarts (which re-requires this module fresh anyway).
- * @returns {Map<string, object>}
+ *
+ * Returns `null` on any read/parse failure rather than an empty Map -- the
+ * caller (loadTriggersIfNeeded()) uses that distinction to decide whether the
+ * load succeeded (even a legitimately empty array is success) or must be
+ * retried later. Swallowing a failure into an empty-but-"successful" Map is
+ * exactly the bug this is fixing: a transient failure (e.g. a startup race
+ * with alexaTriggers.js's write) would otherwise get cached forever as "zero
+ * endpoints known".
+ * @returns {Map<string, object>|null}
  */
 function loadTriggersFromDisk() {
     try {
@@ -96,8 +117,32 @@ function loadTriggersFromDisk() {
         return buildIndex(JSON.parse(raw));
     } catch (err) {
         console.log('MQTT command listener: failed to read config/triggers.json: %s', err && err.message);
-        return new Map();
+        return null;
     }
+}
+
+/**
+ * Attempts the triggers.json load if (and only if) it hasn't already
+ * succeeded. Safe to call on every delta -- once `triggersLoaded` is true
+ * this is a no-op, so a healthy listener never re-reads the file per
+ * message. Called both from ensureInit() (the startup attempt) and from
+ * handleDeltaInner() (the retry-on-first-use-after-a-failed-startup-read
+ * path), so a delta arriving after startup -- by which point triggers.json
+ * is guaranteed complete, since alexaTriggers.js now writes it synchronously
+ * -- recovers cleanly even if the very first read raced and failed.
+ */
+function loadTriggersIfNeeded() {
+    if (triggersLoaded) {
+        return;
+    }
+    const index = doLoadTriggersFromDisk();
+    if (index) {
+        triggersByEndpointId = index;
+        triggersLoaded = true;
+    }
+    // On failure, leave triggersByEndpointId as-is (empty, or whatever was
+    // last successfully loaded) and triggersLoaded false -- the next call
+    // (next delta) will retry.
 }
 
 /**
@@ -115,6 +160,12 @@ function readCommandSourceFromEnv() {
  * Lazily wires this module to the real mqttClient + triggers.json the first
  * time it's actually needed. See the module doc comment for why this is lazy
  * rather than top-level requires/reads.
+ *
+ * The subscribe + COMMAND_SOURCE read + startup log are genuinely one-time
+ * and stay gated by `initialized`. The triggers.json load is delegated to
+ * loadTriggersIfNeeded(), which is guarded separately by `triggersLoaded` --
+ * see that function's doc comment for why: a failed read here must not
+ * prevent a later retry once the file is actually complete.
  */
 function ensureInit() {
     if (initialized) {
@@ -122,7 +173,7 @@ function ensureInit() {
     }
     const mqttClient = require('./mqttClient');
     doSubscribe = mqttClient.subscribe;
-    triggersByEndpointId = loadTriggersFromDisk();
+    loadTriggersIfNeeded();
     commandSourceMode = readCommandSourceFromEnv();
     console.log(
         'MQTT command listener: COMMAND_SOURCE=%s (%s)',
@@ -137,19 +188,49 @@ function ensureInit() {
 /**
  * Test-only (and otherwise unused in production) override hook. See the
  * module doc comment above for why this exists.
+ *
+ * Normal mode (no `diskLoader`): fully replaces state with the injected
+ * fixtures/spies and marks both `initialized` and `triggersLoaded` true, so
+ * a subsequent ensureInit() call is a no-op -- this is what every existing
+ * test in this file relies on (no real subscribe, no real disk read, no
+ * COMMAND_SOURCE log).
+ *
+ * `diskLoader` mode: for the one test (the triggers-load retry regression
+ * test) that needs to exercise the REAL ensureInit()/loadTriggersIfNeeded()
+ * path -- including the one-time subscribe + COMMAND_SOURCE log and the
+ * retry-on-failure behavior -- rather than short-circuiting it. Leaves
+ * `initialized`/`triggersLoaded` false and swaps `doLoadTriggersFromDisk` for
+ * the injected fake, so a following `startCommandListener(handleRequest)`
+ * call runs ensureInit() for real, and later deltas' loadTriggersIfNeeded()
+ * calls the injected loader (and retries it) instead of trusting canned
+ * triggers.
  * @param {object} deps
- * @param {function} deps.subscribe - (topicFilter, handler) => void
- * @param {Array} deps.triggers - fixture triggers.json array
- * @param {function} deps.handleRequest - spy/fake, called with a command path string
+ * @param {function} [deps.subscribe] - (topicFilter, handler) => void
+ * @param {Array} [deps.triggers] - fixture triggers.json array
+ * @param {function} [deps.handleRequest] - spy/fake, called with a command path string
  * @param {"sqs"|"shadow"} [deps.commandSource] - defaults to 'sqs'
+ * @param {function(): (Map|null)} [deps.diskLoader] - replaces the real
+ *   triggers.json read; see "diskLoader mode" above
  */
-function _init({ subscribe, triggers, handleRequest, commandSource } = {}) {
-    doSubscribe = subscribe || (() => {});
-    triggersByEndpointId = buildIndex(triggers || []);
+function _init({ subscribe, triggers, handleRequest, commandSource, diskLoader } = {}) {
     doHandleRequest = handleRequest || (() => {});
-    commandSourceMode = commandSource || 'sqs';
     lastVersionByThing.clear();
     loggedUnknownEndpoints.clear();
+
+    if (diskLoader) {
+        doSubscribe = subscribe || (() => {});
+        doLoadTriggersFromDisk = diskLoader;
+        triggersByEndpointId = new Map();
+        triggersLoaded = false;
+        initialized = false;
+        return;
+    }
+
+    doSubscribe = subscribe || (() => {});
+    doLoadTriggersFromDisk = loadTriggersFromDisk;
+    triggersByEndpointId = buildIndex(triggers || []);
+    triggersLoaded = true; // injected triggers count as a successful load -- no disk retry needed
+    commandSourceMode = commandSource || 'sqs';
     initialized = true;
 }
 
@@ -295,6 +376,15 @@ function handleDeltaInner(topic, payload) {
         return; // not one of ours
     }
     const endpointId = thing.slice(THING_PREFIX.length);
+
+    // Retry a previously-failed triggers.json load before resolving the
+    // endpoint -- a no-op once the load has succeeded. This is what makes a
+    // startup-time read failure recoverable: any delta arriving after
+    // startup (by which point triggers.json is guaranteed complete, since
+    // alexaTriggers.js writes it synchronously) gets a fresh chance to
+    // populate triggersByEndpointId instead of being stuck against the
+    // empty index from a failed first read.
+    loadTriggersIfNeeded();
 
     if (
         !payload ||
