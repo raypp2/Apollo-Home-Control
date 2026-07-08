@@ -228,9 +228,13 @@ function _handleHubCommand(info) {
         // Manual dim finished at paddle release; the resulting level (possibly
         // 0) is unknowable from the broadcast -- the follow-up poll publishes
         // the settled truth on its own. '17' (start) is deliberately ignored.
+        // Unlike tap-ON, the level is ALREADY settled at release (dimming
+        // happens during the hold), so poll on the short delay, not the 3s
+        // ramp allowance -- live-measured, this is the difference between
+        // ~1.5s and ~4s to the bus.
         const entry = findLightByAddress(commandId);
         if (entry) {
-            scheduleEventFollowUpPoll(entry, commandId);
+            scheduleEventFollowUpPoll(entry, commandId, MANUAL_DIM_POLL_DELAY_MS);
         }
         return;
     }
@@ -279,6 +283,11 @@ sweep will catch up on its own, so this never engages pollPausedUntil.
 
 let EVENT_FOLLOWUP_POLL_DELAY_MS = 3000;
 
+// Shorter delay for STOP-MANUAL-CHANGE (0x18) releases: the level is already
+// settled when the paddle is released (no ramp to wait out) -- the small
+// buffer just clears the hub's event-burst window.
+let MANUAL_DIM_POLL_DELAY_MS = 750;
+
 // Dedupe (issue #31-style burst re-emission): the hub re-emits the same
 // physical event several times in a quick burst. Without this, each
 // re-emission would schedule its own follow-up poll. Keyed by uppercased hex
@@ -294,6 +303,7 @@ let pendingEventFollowUpPolls = new Map(); // commandId -> Timeout
  */
 function _setEventFollowUpPollDelayForTesting(ms) {
     EVENT_FOLLOWUP_POLL_DELAY_MS = ms;
+    MANUAL_DIM_POLL_DELAY_MS = ms;
 }
 
 /**
@@ -302,8 +312,9 @@ function _setEventFollowUpPollDelayForTesting(ms) {
  * re-emits) must only ever schedule one follow-up poll.
  * @param {object} entry - the lights.json entry to poll
  * @param {string} commandId - uppercased hex address, used as the dedupe key
+ * @param {number} [delayMs] - defaults to the tap-ON ramp allowance
  */
-function scheduleEventFollowUpPoll(entry, commandId) {
+function scheduleEventFollowUpPoll(entry, commandId, delayMs) {
     if (pendingEventFollowUpPolls.has(commandId)) {
         return; // already have a follow-up poll pending for this device
     }
@@ -311,7 +322,7 @@ function scheduleEventFollowUpPoll(entry, commandId) {
     const timer = setTimeout(function () {
         pendingEventFollowUpPolls.delete(commandId);
         runEventFollowUpPoll(entry);
-    }, EVENT_FOLLOWUP_POLL_DELAY_MS);
+    }, delayMs !== undefined ? delayMs : EVENT_FOLLOWUP_POLL_DELAY_MS);
 
     if (typeof timer.unref === 'function') {
         timer.unref();
