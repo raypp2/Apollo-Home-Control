@@ -54,6 +54,12 @@ const FIELD_ORDER = ['power', 'brightness', 'position'];
 
 let doSubscribe;
 let doHandleRequest;
+// Publishes the desired-field clear (see clearDesiredFields() below). Wired
+// to the real mqttClient.publish in ensureInit(), same as doSubscribe;
+// defaults to a no-op so requiring this module never touches the broker, and
+// so tests that don't care about the clear (most of the existing suite)
+// aren't perturbed. Injectable via _init()'s `publish` dep.
+let doPublish = () => {};
 let triggersByEndpointId = new Map();
 let commandSourceMode = 'sqs';
 let initialized = false;
@@ -173,6 +179,7 @@ function ensureInit() {
     }
     const mqttClient = require('./mqttClient');
     doSubscribe = mqttClient.subscribe;
+    doPublish = mqttClient.publish;
     loadTriggersIfNeeded();
     commandSourceMode = readCommandSourceFromEnv();
     console.log(
@@ -208,12 +215,16 @@ function ensureInit() {
  * @param {function} [deps.subscribe] - (topicFilter, handler) => void
  * @param {Array} [deps.triggers] - fixture triggers.json array
  * @param {function} [deps.handleRequest] - spy/fake, called with a command path string
+ * @param {function} [deps.publish] - spy/fake, called with (topic, payload, opts)
+ *   to assert the desired-clear publish; see clearDesiredFields() below.
+ *   Defaults to a no-op, matching doPublish's own default.
  * @param {"sqs"|"shadow"} [deps.commandSource] - defaults to 'sqs'
  * @param {function(): (Map|null)} [deps.diskLoader] - replaces the real
  *   triggers.json read; see "diskLoader mode" above
  */
-function _init({ subscribe, triggers, handleRequest, commandSource, diskLoader } = {}) {
+function _init({ subscribe, triggers, handleRequest, publish, commandSource, diskLoader } = {}) {
     doHandleRequest = handleRequest || (() => {});
+    doPublish = publish || (() => {});
     lastVersionByThing.clear();
     loggedUnknownEndpoints.clear();
 
@@ -352,6 +363,72 @@ function buildCommands(trigger, state) {
 }
 
 /**
+ * Returns the FIELD_ORDER fields present in a delta's `state` object -- i.e.
+ * the fields this listener actually looked at and acted on (whether or not
+ * buildFieldPath() produced a valid command path for them; see
+ * clearDesiredFields() below for why a malformed value is cleared too, not
+ * just a successfully-executed one). Unrecognized fields (e.g. `color`) are
+ * excluded deliberately -- this listener hasn't acted on them, so it must not
+ * claim/clear them out of `desired`.
+ * @param {object} state
+ * @returns {string[]}
+ */
+function recognizedFieldsPresent(state) {
+    return FIELD_ORDER.filter((field) => Object.prototype.hasOwnProperty.call(state, field));
+}
+
+/**
+ * Empties the "desired inbox" for exactly the fields this delta carried and
+ * this listener processed, once the command has been satisfied -- see the
+ * module doc comment's parallel-run context and issue #23 for the underlying
+ * bug this fixes: AWS IoT shadow `desired` is a sticky setpoint, not a
+ * transient command queue. Apollo's `reported` writes (mqttTopics.js) clear
+ * the delta ONLY while `desired` still matches what was just reported; a
+ * later, unrelated reported change (e.g. "turn off" after "set brightness
+ * 50") leaves the old `desired.brightness` permanently diverged from
+ * `reported.brightness`, and IoT re-emits a `delta` on every subsequent
+ * reported update forever (confirmed live in issue #23's parallel-run logs).
+ * Nulling a shadow desired key deletes it (AWS IoT shadow semantics), which
+ * is exactly the fix: once a field's desired value is gone, there's nothing
+ * left to diverge from reported, so IoT stops emitting deltas for it.
+ *
+ * Publishes to `.../shadow/update` (a plain state-report topic), NOT
+ * `.../shadow/update/delta` (the topic this module SUBSCRIBES to) -- so this
+ * publish can never loop back into `_handleDelta` itself, regardless of what
+ * IoT does with it. And per AWS IoT shadow semantics, deleting/rescinding a
+ * desired field does not itself produce a new delta (there's no new desired
+ * value to diff against reported) -- so even downstream, this clear cannot
+ * trigger a fresh inbound delta that would drive this function again.
+ *
+ * Called in BOTH COMMAND_SOURCE modes: in `sqs` mode, sqsListener.js is the
+ * one actually executing the command, but this listener still received and
+ * logged the same delta, and the whole point of the parallel run is to keep
+ * the shadow clean in both modes so the eventual flip to `shadow` mode is
+ * safe and the comparison logs stay uncluttered.
+ *
+ * Never throws -- a publish failure (offline broker, or in tests, an
+ * injected throwing `doPublish`) is caught and logged here so it can never
+ * escape the delta handler; the command was already received/acted on, so a
+ * failed cleanup publish must not be treated as a failed command.
+ * @param {string} thing - e.g. "apollo-kitchenLight" (topic segment 2)
+ * @param {string[]} fields - recognizedFieldsPresent(payload.state)
+ */
+function clearDesiredFields(thing, fields) {
+    if (!fields.length) {
+        return;
+    }
+    try {
+        const desired = {};
+        for (const field of fields) {
+            desired[field] = null;
+        }
+        doPublish(`$aws/things/${thing}/shadow/update`, { state: { desired } }, { qos: 1, retain: false });
+    } catch (err) {
+        console.log('MQTT command listener: failed to clear desired fields for %s: %s', thing, err && err.message);
+    }
+}
+
+/**
  * Handler for `$aws/things/+/shadow/update/delta`. Never throws -- every
  * failure mode (malformed payload, unknown endpoint, a handleRequest throw)
  * is caught, logged, and dropped. See the module doc comment for the overall
@@ -415,6 +492,7 @@ function handleDeltaInner(topic, payload) {
     lastVersionByThing.set(thing, payload.version);
 
     const commands = buildCommands(trigger, payload.state);
+    const fieldsToClear = recognizedFieldsPresent(payload.state);
 
     const latencyMs = Number.isFinite(payload.timestamp) ? (Date.now() - payload.timestamp * 1000) : 'n/a';
     const label = commandSourceMode === 'shadow' ? 'SHADOW-CMD' : 'SHADOW-CMD (log-only)';
@@ -428,9 +506,18 @@ function handleDeltaInner(topic, payload) {
     );
 
     if (commandSourceMode !== 'shadow') {
-        return; // sqs mode: comparison log only, never execute
+        // sqs mode: comparison log only, never execute -- but sqsListener.js
+        // IS executing this same command right now, so the desired inbox
+        // still needs clearing (see clearDesiredFields() doc comment).
+        clearDesiredFields(thing, fieldsToClear);
+        return;
     }
 
+    // Execute first, clear desired after -- see clearDesiredFields() doc
+    // comment: if execution threw and we'd already cleared desired, the
+    // command would be silently lost (IoT would never re-deliver it, since
+    // nothing would diverge). Each iteration is already wrapped so a single
+    // command's failure can't skip the rest, or skip the clear below.
     for (const commandPath of commands) {
         try {
             doHandleRequest(commandPath);
@@ -438,6 +525,8 @@ function handleDeltaInner(topic, payload) {
             console.log('MQTT command listener: handleRequest threw for %s: %s', commandPath, err && err.message);
         }
     }
+
+    clearDesiredFields(thing, fieldsToClear);
 }
 
 module.exports = {

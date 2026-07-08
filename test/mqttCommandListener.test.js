@@ -62,17 +62,24 @@ const SCENE = {
 const FIXTURE_TRIGGERS = [DIMMABLE_LIGHT, SHADES, SCENE];
 
 let calls;
+let publishCalls;
 
 function fakeHandleRequest(commandPath) {
     calls.push(commandPath);
 }
 
-function initWith(commandSource) {
+function fakePublish(topic, payload, opts) {
+    publishCalls.push({ topic, payload, opts });
+}
+
+function initWith(commandSource, publish) {
     calls = [];
+    publishCalls = [];
     _init({
         subscribe: () => {},
         triggers: FIXTURE_TRIGGERS,
         handleRequest: fakeHandleRequest,
+        publish: publish || fakePublish,
         commandSource,
     });
 }
@@ -234,6 +241,122 @@ test('COMMAND_SOURCE=shadow: the comparison line is logged WITHOUT the "(log-onl
     assert.strictEqual(calls.length, 1);
     assert.ok(logs.some((l) => l.startsWith('SHADOW-CMD:') && l.includes('kitchenLight')));
     assert.ok(!logs.some((l) => l.includes('(log-only)')));
+});
+
+// --- Desired-field clearing (issue #23 parallel-run fix) ---
+//
+// AWS IoT shadow `desired` is a sticky setpoint, not a transient command: once
+// this listener has handled a delta's fields (logged it, and in shadow mode
+// executed it), it must null those exact fields back out of `desired` so a
+// later, unrelated reported update doesn't leave them permanently diverged
+// (which would make IoT re-emit the same stale delta forever). See
+// clearDesiredFields() in src/mqttCommandListener.js for the full reasoning.
+
+test('sqs mode: a single-field delta clears exactly that field from desired via doPublish', () => {
+    initWith('sqs');
+    _handleDelta('$aws/things/apollo-kitchenLight/shadow/update/delta', deltaPayload({ brightness: 50 }, { version: 20 }));
+
+    assert.strictEqual(calls.length, 0, 'sqs mode must not execute');
+    assert.strictEqual(publishCalls.length, 1);
+    assert.deepStrictEqual(publishCalls[0], {
+        topic: '$aws/things/apollo-kitchenLight/shadow/update',
+        payload: { state: { desired: { brightness: null } } },
+        opts: { qos: 1, retain: false },
+    });
+});
+
+test('shadow mode: a single-field delta clears exactly that field from desired via doPublish', () => {
+    initWith('shadow');
+    _handleDelta('$aws/things/apollo-kitchenLight/shadow/update/delta', deltaPayload({ brightness: 50 }, { version: 20 }));
+
+    assert.deepStrictEqual(calls, ['/LIGHTS/kitchenLight/50']);
+    assert.strictEqual(publishCalls.length, 1);
+    assert.deepStrictEqual(publishCalls[0], {
+        topic: '$aws/things/apollo-kitchenLight/shadow/update',
+        payload: { state: { desired: { brightness: null } } },
+        opts: { qos: 1, retain: false },
+    });
+});
+
+test('a multi-field delta clears BOTH fields from desired in one publish', () => {
+    initWith('shadow');
+    _handleDelta(
+        '$aws/things/apollo-kitchenLight/shadow/update/delta',
+        deltaPayload({ power: 'ON', brightness: 50 }, { version: 21 })
+    );
+
+    assert.strictEqual(publishCalls.length, 1);
+    assert.deepStrictEqual(publishCalls[0].payload, { state: { desired: { power: null, brightness: null } } });
+    assert.strictEqual(publishCalls[0].topic, '$aws/things/apollo-kitchenLight/shadow/update');
+    assert.deepStrictEqual(publishCalls[0].opts, { qos: 1, retain: false });
+});
+
+test('shadow mode: execution happens before the desired-clear publish', () => {
+    initWith('shadow');
+    const order = [];
+    _init({
+        subscribe: () => {},
+        triggers: FIXTURE_TRIGGERS,
+        handleRequest: (commandPath) => order.push(`exec:${commandPath}`),
+        publish: (topic) => order.push(`publish:${topic}`),
+        commandSource: 'shadow',
+    });
+
+    _handleDelta('$aws/things/apollo-kitchenLight/shadow/update/delta', deltaPayload({ power: 'ON' }, { version: 22 }));
+
+    assert.deepStrictEqual(order, [
+        'exec:/LIGHTS/kitchenLight/on',
+        'publish:$aws/things/apollo-kitchenLight/shadow/update',
+    ]);
+});
+
+test('a throwing doPublish (desired-clear failure) is caught and does not escape the handler, and shadow-mode execution still happened', () => {
+    calls = [];
+    _init({
+        subscribe: () => {},
+        triggers: FIXTURE_TRIGGERS,
+        handleRequest: fakeHandleRequest,
+        publish: () => {
+            throw new Error('broker offline');
+        },
+        commandSource: 'shadow',
+    });
+
+    assert.doesNotThrow(() => {
+        _handleDelta('$aws/things/apollo-kitchenLight/shadow/update/delta', deltaPayload({ power: 'ON' }, { version: 23 }));
+    });
+    assert.deepStrictEqual(calls, ['/LIGHTS/kitchenLight/on'], 'the command must still have executed');
+});
+
+test('a throwing doPublish in sqs mode is also caught and does not escape the handler', () => {
+    _init({
+        subscribe: () => {},
+        triggers: FIXTURE_TRIGGERS,
+        handleRequest: fakeHandleRequest,
+        publish: () => {
+            throw new Error('broker offline');
+        },
+        commandSource: 'sqs',
+    });
+
+    assert.doesNotThrow(() => {
+        _handleDelta('$aws/things/apollo-kitchenLight/shadow/update/delta', deltaPayload({ power: 'ON' }, { version: 24 }));
+    });
+});
+
+test('the default no-op publish (no `publish` dep injected) does not perturb existing behavior', () => {
+    calls = [];
+    _init({
+        subscribe: () => {},
+        triggers: FIXTURE_TRIGGERS,
+        handleRequest: fakeHandleRequest,
+        commandSource: 'shadow',
+    });
+
+    assert.doesNotThrow(() => {
+        _handleDelta('$aws/things/apollo-kitchenLight/shadow/update/delta', deltaPayload({ power: 'ON' }, { version: 25 }));
+    });
+    assert.deepStrictEqual(calls, ['/LIGHTS/kitchenLight/on']);
 });
 
 // --- Regression: a failed triggers.json load must not be cached as empty ---
