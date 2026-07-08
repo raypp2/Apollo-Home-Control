@@ -194,12 +194,15 @@ function startListener(handleRequest) {
  * is ignored silently -- dimming/brighten/etc are not (yet) mapped to a
  * canonical state here.
  *
- * A physical switch press only ever broadcasts ON/OFF -- the ramp-to level is
- * whatever the switch has locally stored, which the hub does not include in
- * the event. OFF is unambiguous (brightness is definitionally 0, published
- * directly below), but ON needs a follow-up level poll (issue #11 follow-up:
- * dim value stays stale until the round-robin sweep happens to reach this
- * device, up to ~90s) -- see scheduleEventFollowUpPoll().
+ * Physical broadcasts and how each maps to state:
+ *   11 ON        -> {power ON}, ramp-to level unknown -> follow-up poll
+ *   12 FAST-ON   -> {power ON, brightness 100} (full by definition)
+ *   13 OFF       -> {power OFF, brightness 0}
+ *   14 FAST-OFF  -> {power OFF, brightness 0}
+ *   17 START MANUAL CHANGE -> ignored (nothing settled yet)
+ *   18 STOP MANUAL CHANGE  -> no publish; follow-up poll reads the settled
+ *                             level (hold-to-dim releases land here)
+ * See scheduleEventFollowUpPoll() for the poll mechanics.
  *
  * Exported as a pure-ish function (only side effect is via injected/module
  * lights_new + mqttTopics) for direct unit testing, mirroring lightingShelly's
@@ -216,13 +219,36 @@ function _handleHubCommand(info) {
     const commandId = String(info.standard.id).toUpperCase();
     const command1 = info.standard.command1;
 
+    // Command coverage (live-debug finding, 2026-07-07): a physical HOLD-to-dim
+    // broadcasts START (0x17) / STOP (0x18) MANUAL CHANGE -- not 11/13 -- and a
+    // double-tap broadcasts FAST-ON (0x12) / FAST-OFF (0x14). Handling only
+    // 11/13 left hold-dims silent until the round-robin sweep wandered past
+    // (up to ~90s of stale state in the Alexa app / dashboard).
+    if (command1 === '18') {
+        // Manual dim finished at paddle release; the resulting level (possibly
+        // 0) is unknowable from the broadcast -- the follow-up poll publishes
+        // the settled truth on its own. '17' (start) is deliberately ignored.
+        const entry = findLightByAddress(commandId);
+        if (entry) {
+            scheduleEventFollowUpPoll(entry, commandId);
+        }
+        return;
+    }
+
     let power;
+    let brightness;
+    let followUp = false;
     if (command1 === '11') {
         power = 'ON';
-    } else if (command1 === '13') {
+        followUp = true; // ramp-to level unknown -- poll for it
+    } else if (command1 === '12') {
+        power = 'ON';
+        brightness = 100; // FAST-ON is full brightness by definition
+    } else if (command1 === '13' || command1 === '14') {
         power = 'OFF';
+        brightness = 0; // OFF/FAST-OFF are definitionally 0
     } else {
-        return; // Ignore silently -- not a plain ON/OFF we map to state.
+        return; // Ignore silently -- not a state-bearing broadcast (e.g. '17').
     }
 
     const entry = findLightByAddress(commandId);
@@ -230,16 +256,12 @@ function _handleHubCommand(info) {
         return;
     }
 
-    if (power === 'ON') {
-        mqttTopics.publishState(entry, { power }, 'event');
-        entry.checked = true;
-        entry.status = 100;
+    const state = (brightness === undefined) ? { power } : { power, brightness };
+    mqttTopics.publishState(entry, state, 'event');
+    entry.checked = (power === 'ON');
+    entry.status = (brightness !== undefined) ? brightness : 100;
+    if (followUp) {
         scheduleEventFollowUpPoll(entry, commandId);
-    } else {
-        // OFF is unambiguous -- brightness is definitionally 0, no poll needed.
-        mqttTopics.publishState(entry, { power, brightness: 0 }, 'event');
-        entry.checked = false;
-        entry.status = 0;
     }
 }
 
