@@ -101,6 +101,7 @@ if (DRY_RUN) {
     console.log("###### APOLLO_DRY_RUN=1 -- Insteon Listener NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- Hue SSE Listener NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- IP device power poller NOT started (dry-run) ######");
+    console.log("###### APOLLO_DRY_RUN=1 -- MQTT Command Listener NOT started (dry-run) ######");
 } else {
     // Start SQS Listener
     const sqsListener = require('./src/sqsListener');
@@ -109,6 +110,13 @@ if (DRY_RUN) {
     // Start Insteon Listener for KeyPad Presses
     const insteonListener = require('./src/lightingInsteonListener');
     insteonListener.startListener(handleRequest);
+
+    // Start MQTT Command Listener (Stage 10 of the MQTT plan, issue #23) --
+    // subscribes to IoT shadow deltas for Alexa commands, running in parallel
+    // with the SQS listener above during the validation period. See
+    // src/mqttCommandListener.js and the COMMAND_SOURCE env var (sample.env).
+    const mqttCommandListener = require('./src/mqttCommandListener');
+    mqttCommandListener.startCommandListener(handleRequest);
 
     // Start Philips Hue SSE Listener (Stage 4 of the MQTT plan, issue #12) --
     // subscribes to the Hue bridge's own event stream for near-real-time
