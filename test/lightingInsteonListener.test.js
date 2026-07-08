@@ -180,6 +180,63 @@ test('OFF event publishes brightness:0 immediately and schedules no follow-up po
     assert.strictEqual(published.length, 1);
 });
 
+test('STOP-MANUAL-CHANGE (18, hold-to-dim release) publishes nothing itself but polls the settled level', async () => {
+    listener._setEventFollowUpPollDelayForTesting(20);
+    listener._setHub(fakeHubWithLevels({ '2A2A2A': 30 }));
+
+    listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '18', command2: '00' } });
+
+    // No synchronous event publish -- the broadcast carries no settled state.
+    assert.strictEqual(published.length, 0);
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    assert.strictEqual(published.length, 1);
+    assert.strictEqual(published[0].payload.power, 'ON');
+    assert.strictEqual(published[0].payload.brightness, 30);
+    assert.strictEqual(published[0].payload.source, 'poll');
+    assert.strictEqual(kitchen.status, 30);
+});
+
+test('START-MANUAL-CHANGE (17) is ignored entirely', async () => {
+    listener._setEventFollowUpPollDelayForTesting(20);
+    listener._setHub(fakeHubWithLevels({ '2A2A2A': 30 }));
+
+    listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '17', command2: '00' } });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    assert.strictEqual(published.length, 0);
+});
+
+test('FAST-ON (12, double-tap) publishes brightness:100 immediately, no follow-up poll', async () => {
+    listener._setEventFollowUpPollDelayForTesting(20);
+    listener._setHub(fakeHubWithLevels({ '2A2A2A': 62 }));
+
+    listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '12', command2: 'FF' } });
+
+    assert.strictEqual(published.length, 1);
+    assert.strictEqual(published[0].payload.power, 'ON');
+    assert.strictEqual(published[0].payload.brightness, 100);
+    assert.strictEqual(published[0].payload.source, 'event');
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    assert.strictEqual(published.length, 1); // no poll scheduled
+});
+
+test('FAST-OFF (14, double-tap) publishes brightness:0 immediately, no follow-up poll', async () => {
+    listener._setEventFollowUpPollDelayForTesting(20);
+    listener._setHub(fakeHubWithLevels({ '2A2A2A': 62 }));
+
+    listener._handleHubCommand({ standard: { id: '2A2A2A', command1: '14', command2: '00' } });
+
+    assert.strictEqual(published.length, 1);
+    assert.strictEqual(published[0].payload.power, 'OFF');
+    assert.strictEqual(published[0].payload.brightness, 0);
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    assert.strictEqual(published.length, 1);
+});
+
 test('a burst of repeated ON events schedules exactly one follow-up poll', async () => {
     listener._setEventFollowUpPollDelayForTesting(20);
     listener._setHub(fakeHubWithLevels({ '2A2A2A': 45 }));
