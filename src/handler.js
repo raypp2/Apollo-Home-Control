@@ -370,11 +370,34 @@ function handleMacro(debugId, apiDevice, apiCommand, response) {
 
     // Run each command in the macro
     for (var i=0; i < macro_commands.length; i++) {
-            // console.log("%d - Running Command: %s", debugId, macro_commands[i]);
+            var curCommand = macro_commands[i];
+
+            // Object form -- { "on": "...", "off": "..." } -- lets a single
+            // macro entry specify DIFFERENT command paths for on vs off,
+            // instead of passOnOff's blind "/" + apiCommand append. Needed
+            // whenever the on-state path already has its own trailing
+            // command/param (e.g. "lights/kitchen/50" to dim to a specific
+            // level) -- appending apiCommand as a further trailing segment
+            // in that case is silently ignored by modules like LIGHTS
+            // (which only look at the segment right after the device id),
+            // so the command runs unconditionally regardless of on/off,
+            // instead of toggling. See studioMacro in macros.json for a
+            // real example (issue: "turning off Studio turned lights on").
+            if (curCommand && typeof curCommand === 'object') {
+                var objectFormPath = (apiCommand === 'OFF') ? curCommand.off : curCommand.on;
+                if (objectFormPath) {
+                    handleRequest("/"+objectFormPath);
+                } else {
+                    console.log("%d - Macro command has no '%s' path, skipping", debugId, apiCommand === 'OFF' ? 'off' : 'on');
+                }
+                continue;
+            }
+
+            // console.log("%d - Running Command: %s", debugId, curCommand);
             if(passOnOff){
-                handleRequest("/"+macro_commands[i]+"/"+apiCommand);
+                handleRequest("/"+curCommand+"/"+apiCommand);
             } else {
-                handleRequest("/"+macro_commands[i]);
+                handleRequest("/"+curCommand);
             }
     }
 
