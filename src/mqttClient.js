@@ -11,9 +11,22 @@
  *               Public API:
  *                 connect()                      - idempotent, call once from index.js
  *                 publish(topic, payload, opts)  - opts default { qos: 1, retain: false }
- *                 subscribe(topicFilter, handler) - handler(topic, payload, raw)
+ *                 subscribe(topicFilter, handler) - handler(topic, payload, raw, retain)
  *                 isConnected()
  *                 topicMatches(filter, topic)    - exported for tests
+ *
+ *               `retain` (added for Stage 6, issue #14): the fourth handler
+ *               arg surfaces the MQTT PUBLISH packet's retain flag, sourced
+ *               from mqtt.js's own 'message' event (topic, message, packet) --
+ *               packet.retain is set by the broker for every message that was
+ *               stored retained on its topic, including the initial replay a
+ *               subscriber gets immediately upon subscribing. Consumers that
+ *               don't care about it (every handler that existed before Stage
+ *               6) simply declare fewer params and keep working unmodified.
+ *               mqttSetListener.js is the first consumer that needs it: a
+ *               `/set` command topic is an event, not state, so a retained
+ *               message replayed at subscribe-time/reconnect must not re-fire
+ *               a physical command.
  *
  *               connect() is non-blocking: mqtt.js queues outgoing publishes while
  *               offline and reconnects on its own (reconnectPeriod), so Apollo starts
@@ -139,8 +152,9 @@ function connect() {
         }
     });
 
-    client.on('message', (topic, messageBuffer) => {
+    client.on('message', (topic, messageBuffer, packet) => {
         const raw = messageBuffer.toString();
+        const retain = Boolean(packet && packet.retain);
         let payload = raw;
         try {
             payload = JSON.parse(raw);
@@ -163,7 +177,7 @@ function connect() {
         for (const { filter, handler } of subscriptions) {
             if (topicMatches(filter, topic)) {
                 try {
-                    handler(topic, payload, messageBuffer);
+                    handler(topic, payload, messageBuffer, retain);
                 } catch (err) {
                     console.log('MQTT: handler for %s threw: %s', filter, err.message);
                 }
@@ -198,14 +212,17 @@ function publish(topic, payload, opts) {
 
 /**
  * Registers a handler for a topic filter (supports '+' and '#'). The handler
- * receives (topic, payload, rawBuffer) where payload is JSON.parse'd when
- * possible; non-JSON payloads (e.g. plain "online"/"offline" strings) are
- * logged (topic + first 100 chars) and passed through as the raw string --
- * see the comment in the 'message' listener in connect() for why. A handler
- * that throws is caught and logged; it can never crash the process or starve
+ * receives (topic, payload, rawBuffer, retain) where payload is JSON.parse'd
+ * when possible; non-JSON payloads (e.g. plain "online"/"offline" strings)
+ * are logged (topic + first 100 chars) and passed through as the raw string
+ * -- see the comment in the 'message' listener in connect() for why. `retain`
+ * is the broker's retain flag for this specific delivery (true both for a
+ * genuinely-just-published retained message and for the replay a subscriber
+ * gets on subscribe/reconnect) -- see the module doc comment. A handler that
+ * throws is caught and logged; it can never crash the process or starve
  * other handlers for the same message.
  * @param {string} topicFilter
- * @param {function(string, *, Buffer): void} handler
+ * @param {function(string, *, Buffer, boolean): void} handler
  */
 function subscribe(topicFilter, handler) {
     subscriptions.push({ filter: topicFilter, handler });
