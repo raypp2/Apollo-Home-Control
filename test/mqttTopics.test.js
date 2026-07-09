@@ -161,6 +161,51 @@ test('publishUnreachable with no prior state still publishes a minimal reachable
     assert.ok(Number.isInteger(result.timestamp));
 });
 
+// --- seedFromRetained: boot-time merge-cache seeding from retained replay ---
+
+// NOTE: every test below uses an entry id unique within this file (rather
+// than reusing e.g. "kitchen") -- stateCache is a module-level Map with no
+// per-test reset, so a shared id would let an earlier test's cache entry
+// leak in and mask whether seedFromRetained's own empty-slot/no-clobber
+// logic actually ran.
+
+test('seedFromRetained fills an empty cache slot so a subsequent partial publishState merges correctly', () => {
+    const entry = { id: 'seedFromRetainedFillsEmptySlot', type: 'insteon' };
+    const topic = mqttTopics.topicFor(entry, 'state');
+    mqttTopics.seedFromRetained(topic, { power: 'ON', brightness: 40, reachable: true });
+
+    const result = mqttTopics.publishState(entry, { brightness: 90 }, 'poll');
+    assert.strictEqual(result.power, 'ON', 'power from the retained seed should survive the partial merge');
+    assert.strictEqual(result.brightness, 90);
+});
+
+test('seedFromRetained does not clobber state this process already published', () => {
+    const entry = { id: 'seedFromRetainedNoClobber', type: 'insteon' };
+    const topic = mqttTopics.topicFor(entry, 'state');
+    mqttTopics.publishState(entry, { power: 'ON', brightness: 40 }, 'command');
+
+    mqttTopics.seedFromRetained(topic, { power: 'OFF', brightness: 0 });
+
+    const cached = mqttTopics.lastState(entry);
+    assert.strictEqual(cached.power, 'ON', 'in-process state must win over a later retained seed');
+    assert.strictEqual(cached.brightness, 40);
+});
+
+test('seedFromRetained ignores non-object payloads without throwing', () => {
+    // Uses a topic no other test in this file touches -- stateCache is a
+    // module-level Map with no per-test reset, so reusing e.g. the
+    // "kitchen"/insteon topic here would false-fail against cache state left
+    // behind by earlier tests.
+    const entry = { id: 'seedFromRetainedNonObjectPayloadCheck', type: 'insteon' };
+    const topic = mqttTopics.topicFor(entry, 'state');
+
+    assert.doesNotThrow(() => mqttTopics.seedFromRetained(topic, 'online'));
+    assert.doesNotThrow(() => mqttTopics.seedFromRetained(topic, null));
+    assert.doesNotThrow(() => mqttTopics.seedFromRetained(topic, undefined));
+
+    assert.strictEqual(mqttTopics.lastState(entry), null, 'a non-object payload must not seed the cache');
+});
+
 // --- lastState ---
 
 test('lastState returns null before any publish', () => {

@@ -36,16 +36,24 @@ function fakePublishUnreachable(entry) {
     return { reachable: false };
 }
 
+let seededTopics;
+
+function fakeSeedFromRetained(topic, payload) {
+    seededTopics.push({ topic, payload });
+}
+
 beforeEach(() => {
     published = [];
     unreachablePublished = [];
     entriesByTopic = new Map();
+    seededTopics = [];
     healthMonitor._resetForTesting();
     healthMonitor._init({
         subscribe: () => {}, // not exercised directly -- handlers are called directly in these tests
         publish: fakePublish,
         findByTopic: fakeFindByTopic,
         publishUnreachable: fakePublishUnreachable,
+        seedFromRetained: fakeSeedFromRetained,
     });
 });
 
@@ -66,7 +74,7 @@ test('_handleState tracks a new topic using the payload timestamp (unix seconds)
     const health = healthMonitor.getHealth();
     const detail = health.deviceDetail.find((d) => d.topic === INSTEON_TOPIC);
     assert.ok(detail, 'topic should be tracked');
-    assert.strictEqual(detail.lastSeen, payloadTimestampS * 1000);
+    assert.strictEqual(detail.lastSeenMs, payloadTimestampS * 1000);
     assert.strictEqual(detail.state.power, 'ON');
 });
 
@@ -76,7 +84,7 @@ test('_handleState falls back to receipt time when payload has no timestamp', ()
     const after = Date.now();
 
     const detail = healthMonitor.getHealth().deviceDetail.find((d) => d.topic === INSTEON_TOPIC);
-    assert.ok(detail.lastSeen >= before && detail.lastSeen <= after);
+    assert.ok(detail.lastSeenMs >= before && detail.lastSeenMs <= after);
 });
 
 test('_handleState ignores a payload timestamp more than 60s in the future, using receipt time instead', () => {
@@ -86,7 +94,7 @@ test('_handleState ignores a payload timestamp more than 60s in the future, usin
     const after = Date.now();
 
     const detail = healthMonitor.getHealth().deviceDetail.find((d) => d.topic === INSTEON_TOPIC);
-    assert.ok(detail.lastSeen >= before && detail.lastSeen <= after, 'should use receipt time, not the future timestamp');
+    assert.ok(detail.lastSeenMs >= before && detail.lastSeenMs <= after, 'should use receipt time, not the future timestamp');
 });
 
 test('_handleState accepts a payload timestamp up to 60s in the future (sane clock skew)', () => {
@@ -94,7 +102,7 @@ test('_handleState accepts a payload timestamp up to 60s in the future (sane clo
     healthMonitor._handleState(INSTEON_TOPIC, { power: 'ON', timestamp: nearFutureS });
 
     const detail = healthMonitor.getHealth().deviceDetail.find((d) => d.topic === INSTEON_TOPIC);
-    assert.strictEqual(detail.lastSeen, nearFutureS * 1000);
+    assert.strictEqual(detail.lastSeenMs, nearFutureS * 1000);
 });
 
 test('_handleState never throws on malformed payloads', () => {
@@ -103,6 +111,35 @@ test('_handleState never throws on malformed payloads', () => {
     assert.doesNotThrow(() => healthMonitor._handleState(INSTEON_TOPIC, { timestamp: 'garbage' }));
     assert.doesNotThrow(() => healthMonitor._handleState(INSTEON_TOPIC, undefined));
     assert.doesNotThrow(() => healthMonitor._handleState(INSTEON_TOPIC, { timestamp: NaN }));
+});
+
+// --- _handleState: retained-replay forwarding to mqttTopics.seedFromRetained ---
+
+test('_handleState forwards a retained delivery to seedFromRetained', () => {
+    healthMonitor._handleState(INSTEON_TOPIC, { power: 'ON' }, undefined, true);
+
+    assert.strictEqual(seededTopics.length, 1);
+    assert.strictEqual(seededTopics[0].topic, INSTEON_TOPIC);
+    assert.deepStrictEqual(seededTopics[0].payload, { power: 'ON' });
+});
+
+test('_handleState does NOT forward a live (non-retained) delivery to seedFromRetained', () => {
+    healthMonitor._handleState(INSTEON_TOPIC, { power: 'ON' }, undefined, false);
+    healthMonitor._handleState(INSTEON_TOPIC, { power: 'ON' }); // retain omitted entirely
+
+    assert.strictEqual(seededTopics.length, 0);
+});
+
+test('_handleState never throws even if seedFromRetained throws', () => {
+    healthMonitor._init({
+        subscribe: () => {},
+        publish: fakePublish,
+        findByTopic: fakeFindByTopic,
+        publishUnreachable: fakePublishUnreachable,
+        seedFromRetained: () => { throw new Error('boom'); },
+    });
+
+    assert.doesNotThrow(() => healthMonitor._handleState(INSTEON_TOPIC, { power: 'ON' }, undefined, true));
 });
 
 // --- _tick: staleness per ecosystem, fires once, publishUnreachable ---
@@ -335,7 +372,9 @@ test('getHealth includes the summary fields plus a deviceDetail array', () => {
     healthMonitor._handleBridgeStatus(BRIDGE_APOLLO_TOPIC, 'online');
 
     const health = healthMonitor.getHealth();
-    assert.ok(Number.isInteger(health.timestamp));
+    assert.ok(Number.isInteger(health.timestamp), 'timestamp (unix seconds, unchanged MQTT summary shape)');
+    assert.ok(Number.isInteger(health.nowMs), 'nowMs (ms) should be present for HTTP consumers');
+    assert.ok(health.nowMs > health.timestamp, 'nowMs is ms-scale, timestamp is seconds-scale');
     assert.strictEqual(health.devices, 1);
     assert.ok(Array.isArray(health.stale));
     assert.ok(typeof health.bridges === 'object');
@@ -344,7 +383,7 @@ test('getHealth includes the summary fields plus a deviceDetail array', () => {
 
     const detail = health.deviceDetail[0];
     assert.strictEqual(detail.topic, INSTEON_TOPIC);
-    assert.ok('lastSeen' in detail);
+    assert.ok('lastSeenMs' in detail, 'per-device time field is explicitly ms-suffixed');
     assert.ok('ageSeconds' in detail);
     assert.ok('stale' in detail);
     assert.ok('state' in detail);

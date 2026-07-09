@@ -1,0 +1,129 @@
+// Presentation geometry for the isometric floorplan (dashboard redesign increment 0).
+// Coordinates traced verbatim from the design's plan3/furn3/lights3 object literals
+// (Apollo Explorations.dc.html), in the design's 470x980 plane space. `rect` and
+// `furniture` are exact traces. `fixtures` positions are placeholder guesses noted
+// in the design as "to be placed exactly later" — refine once real device
+// positions are confirmed against the drawing.
+[
+  {
+    "id": "kitchen",
+    "label": "KITCHEN",
+    "selectable": true,
+    "rect": { "x": 38, "y": 15, "w": 162, "h": 208 },
+    "furniture": [
+      { "x": 2, "y": 40, "w": 40, "h": 150, "r": "2px", "kids": [ { "x": 6, "y": 48, "w": 9, "h": 9, "r": "50%" }, { "x": 20, "y": 48, "w": 9, "h": 9, "r": "50%" }, { "x": 6, "y": 62, "w": 9, "h": 9, "r": "50%" }, { "x": 20, "y": 62, "w": 9, "h": 9, "r": "50%" } ] },
+      { "x": 108, "y": 3, "w": 52, "h": 100, "r": "2px" },
+      { "x": 108, "y": 158, "w": 42, "h": 42, "r": "2px", "kids": [ { "x": 11, "y": 11, "w": 20, "h": 20, "r": "50%" } ] },
+    ],
+    "fixtures": {
+      "kitchen": { "x": 80, "y": 104 },
+    },
+  },
+  {
+    "id": "dining",
+    "label": "DINING",
+    "selectable": true,
+    "rect": { "x": 200, "y": 15, "w": 258, "h": 160 },
+    "furniture": [
+      { "x": 52, "y": 35, "w": 120, "h": 78, "r": "4px" },
+      { "x": 84, "y": 16, "w": 26, "h": 14, "r": "3px" },
+      { "x": 84, "y": 118, "w": 26, "h": 14, "r": "3px" },
+      { "x": 30, "y": 60, "w": 14, "h": 26, "r": "3px" },
+      { "x": 178, "y": 60, "w": 14, "h": 26, "r": "3px" },
+      { "x": 232, "y": 26, "w": 20, "h": 106, "r": "2px", "kids": [ { "x": 4, "y": 12, "w": 12, "h": 3, "r": "1px" }, { "x": 4, "y": 32, "w": 12, "h": 3, "r": "1px" }, { "x": 4, "y": 52, "w": 12, "h": 3, "r": "1px" }, { "x": 4, "y": 72, "w": 12, "h": 3, "r": "1px" }, { "x": 4, "y": 90, "w": 12, "h": 3, "r": "1px" } ] },
+    ],
+    "fixtures": {
+      "diningRoom": { "x": 112, "y": 74 },
+    },
+  },
+  {
+    "id": "living",
+    "label": "LIVING",
+    "selectable": true,
+    "rect": { "x": 202, "y": 175, "w": 266, "h": 268 },
+    "furniture": [
+      { "x": 8, "y": 8, "w": 27, "h": 150, "r": "2px", "kids": [ { "x": 19, "y": 28, "w": 4, "h": 94, "r": "2px" } ] },
+      { "x": 200, "y": 5, "w": 56, "h": 160, "r": "6px 6px 0 6px", "kids": [ { "x": 42, "y": 4, "w": 11, "h": 152, "r": "4px" }, { "x": 5, "y": 8, "w": 33, "h": 44, "r": "4px" }, { "x": 5, "y": 56, "w": 33, "h": 44, "r": "4px" }, { "x": 5, "y": 104, "w": 33, "h": 44, "r": "4px" } ] },
+      { "x": 130, "y": 115, "w": 72, "h": 50, "r": "6px 0 0 6px", "kids": [ { "x": 4, "y": 36, "w": 66, "h": 10, "r": "4px" }, { "x": 5, "y": 5, "w": 30, "h": 28, "r": "4px" }, { "x": 37, "y": 5, "w": 30, "h": 28, "r": "4px" } ] },
+      { "x": 126, "y": 30, "w": 68, "h": 54, "r": "58% 42% 52% 48% / 48% 58% 42% 52%", "rot": "-8deg", "kids": [ { "x": 15, "y": 13, "w": 38, "h": 28, "r": "58% 42% 52% 48% / 48% 58% 42% 52%" } ] },
+      { "x": 222, "y": 180, "w": 33, "h": 80, "r": "4px", "kids": [ { "x": 5, "y": 6, "w": 23, "h": 50, "r": "3px" }, { "x": 5, "y": 60, "w": 23, "h": 14, "r": "3px" } ] },
+    ],
+    "fixtures": {
+      "livingRoomBookshelf": { "x": 22, "y": 170 },
+      "livingRoomCouch": { "x": 214, "y": 88 },
+      "giantP": { "x": 238, "y": 230 },
+      "led-art-wall": { "x": 120, "y": 10 },
+      // Single virtual fixture dot for the DMX preset picker (Ceiling/Deer/Mirror Ball/etc
+      // are presets on this one fixture, not separate dots).
+      "accent": { "x": 162, "y": 130 },
+    },
+    "links": ["plex", "jellyfin"],
+  },
+  {
+    "id": "bath",
+    "label": "BATH",
+    "selectable": false,
+    "rect": { "x": 22, "y": 255, "w": 158, "h": 113 },
+    "furniture": [
+      { "x": 8, "y": 22, "w": 30, "h": 78, "r": "8px", "kids": [ { "x": 5, "y": 6, "w": 20, "h": 58, "r": "8px" }, { "x": 10, "y": 68, "w": 10, "h": 6, "r": "3px" } ] },
+      { "x": 53, "y": 8, "w": 25, "h": 38, "r": "4px", "kids": [ { "x": 3, "y": 12, "w": 19, "h": 22, "r": "50%" } ] },
+      { "x": 105, "y": 5, "w": 38, "h": 18, "r": "2px", "kids": [ { "x": 5, "y": 4, "w": 11, "h": 11, "r": "50%" }, { "x": 22, "y": 4, "w": 11, "h": 11, "r": "50%" } ] },
+    ],
+    "fixtures": {},
+  },
+  {
+    "id": "hall",
+    "label": "HALL",
+    "selectable": true,
+    "rect": { "x": 130, "y": 368, "w": 73, "h": 338 },
+    "furniture": [
+      { "x": 2, "y": 125, "w": 14, "h": 38, "r": "2px" },
+    ],
+    "fixtures": {
+      "hall": { "x": 36, "y": 170 },
+    },
+  },
+  {
+    "id": "office",
+    "label": "OFFICE",
+    "selectable": true,
+    "rect": { "x": 272, "y": 443, "w": 196, "h": 182 },
+    "furniture": [
+      { "x": 141, "y": 35, "w": 53, "h": 92, "r": "3px", "kids": [ { "x": 5, "y": 26, "w": 7, "h": 40, "r": "2px" }, { "x": 30, "y": 32, "w": 16, "h": 26, "r": "2px" } ] },
+      { "x": 3, "y": 17, "w": 30, "h": 38, "r": "2px", "kids": [ { "x": 5, "y": 8, "w": 20, "h": 3, "r": "1px" }, { "x": 5, "y": 18, "w": 20, "h": 3, "r": "1px" }, { "x": 5, "y": 27, "w": 20, "h": 3, "r": "1px" } ] },
+      { "x": 41, "y": 150, "w": 95, "h": 22, "r": "2px", "kids": [ { "x": 8, "y": 5, "w": 3, "h": 12, "r": "1px" }, { "x": 16, "y": 5, "w": 3, "h": 12, "r": "1px" }, { "x": 24, "y": 5, "w": 3, "h": 12, "r": "1px" }, { "x": 50, "y": 5, "w": 3, "h": 12, "r": "1px" }, { "x": 58, "y": 5, "w": 3, "h": 12, "r": "1px" }, { "x": 78, "y": 5, "w": 3, "h": 12, "r": "1px" } ] },
+    ],
+    "fixtures": {
+      "officeDesk": { "x": 167, "y": 80 },
+      "officeWall": { "x": 12, "y": 90 },
+      "office-bookshelf": { "x": 88, "y": 161 },
+      "webcam": { "x": 120, "y": 30 },
+      "hair-light": { "x": 70, "y": 30 },
+      // TODO: place siren-light — no design position traced yet.
+    },
+  },
+  {
+    "id": "guest",
+    "label": "GUEST",
+    "selectable": false,
+    "rect": { "x": 40, "y": 670, "w": 105, "h": 295 },
+    "furniture": [
+      { "x": 5, "y": 180, "w": 85, "h": 105, "r": "4px", "kids": [ { "x": 8, "y": 74, "w": 32, "h": 22, "r": "5px" }, { "x": 46, "y": 74, "w": 32, "h": 22, "r": "5px" }, { "x": 4, "y": 6, "w": 77, "h": 60, "r": "3px" } ] },
+    ],
+    "fixtures": {},
+  },
+  {
+    "id": "master",
+    "label": "BEDROOM",
+    "selectable": true,
+    "rect": { "x": 148, "y": 708, "w": 320, "h": 258 },
+    "furniture": [
+      { "x": 90, "y": 62, "w": 98, "h": 180, "r": "5px", "kids": [ { "x": 9, "y": 148, "w": 38, "h": 24, "r": "5px" }, { "x": 52, "y": 148, "w": 38, "h": 24, "r": "5px" }, { "x": 5, "y": 6, "w": 88, "h": 108, "r": "4px" } ] },
+      { "x": 56, "y": 206, "w": 28, "h": 28, "r": "3px" },
+      { "x": 194, "y": 206, "w": 28, "h": 28, "r": "3px" },
+    ],
+    "fixtures": {
+      "bedroomColor": { "x": 139, "y": 150 },
+    },
+  },
+]

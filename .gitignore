@@ -4,6 +4,10 @@ logs
 
 # Dependency directories
 node_modules/
+web/node_modules/
+
+# Dashboard v2 build output (rsynced to the Pi, not tracked)
+public/app/
 
 # Optional npm cache directory
 .npm

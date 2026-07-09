@@ -1,0 +1,152 @@
+// Apollo v2 dashboard -- device command dispatch + normalized view model.
+//
+// One place that knows how a config entry maps to (a) a normalized shape the
+// UI can render uniformly -- `deviceView(entry)` -- and (b) the /api command
+// paths that actuate it. Both the isometric plane (fixture dots) and the
+// command panel (device rows) consume `deviceView`; only the panel dispatches.
+//
+// Command paths follow the handler grammar: /api/<MODULE>/<ID>/<CMD>/<P1?>.
+// Segments are uppercased server-side, so pass them as-is. Commands are
+// fire-and-forget; the optimistic layer shows intent, MQTT confirms.
+//
+// Scope note (increment 2): only LIGHTS (dim/switch) and the Somfy shade are
+// dispatchable here. Color pickers (increment 3), AV/climate/projector/utility
+// (increment 4) extend `kindOf`/`deviceView` and add their own command paths.
+
+import * as store from './store.js';
+import { sendCommand } from './api.js';
+import { applyOptimistic } from './optimistic.js';
+import { setLastAction } from './ui.js';
+
+// Config `type` values that dim smoothly enough to stream level changes during
+// a drag. Everything else commits once, on pointer release.
+const LIVE_DRAG_TYPES = new Set(['hue-group', 'dmxFixture']);
+
+/**
+ * @param {object} entry - a store device entry
+ * @returns {'dim'|'switch'|'shade'|'other'}
+ */
+export function kindOf(entry) {
+  if (!entry) return 'other';
+  if (entry.type === 'Somfy-Bridge') return 'shade';
+  if (entry.module === 'LIGHTS') {
+    // Insteon/Hue/DMX dim; Shelly/WLED are on/off relays. `alexa.isDimmable`
+    // is the authoritative dimmable flag carried in config.
+    return entry.alexa && entry.alexa.isDimmable ? 'dim' : 'switch';
+  }
+  return 'other';
+}
+
+/** Whether a light entry is currently on (power === 'ON'). */
+export function isOn(entry) {
+  return Boolean(entry && entry.live && entry.live.power === 'ON');
+}
+
+/** Current 0-100 level for a dim light (brightness, or 100/0 by power). */
+export function levelOf(entry) {
+  const b = entry && entry.live && entry.live.brightness;
+  if (typeof b === 'number') return b;
+  return isOn(entry) ? 100 : 0;
+}
+
+/** Current 0-100 shade position (0 = open/up, 100 = closed/down). */
+export function positionOf(entry) {
+  const p = entry && entry.live && entry.live.position;
+  return typeof p === 'number' ? p : 0;
+}
+
+/**
+ * Drag-commit policy for this device: 'live' streams level changes to the
+ * backend during the drag; 'release' updates only the local display during the
+ * drag and sends a single command on release (Insteon can't absorb a stream).
+ * @param {object} entry
+ * @returns {'live'|'release'}
+ */
+export function commitMode(entry) {
+  return entry && LIVE_DRAG_TYPES.has(entry.type) ? 'live' : 'release';
+}
+
+/**
+ * A normalized view of a device for uniform rendering by plane + panel.
+ * @param {object} entry
+ * @returns {{kind:string, on:boolean, level:number, position:number,
+ *            color:?string, reachable:boolean, stale:boolean,
+ *            unconfirmed:boolean, commit:string, title:string}}
+ */
+export function deviceView(entry) {
+  const kind = kindOf(entry);
+  const live = (entry && entry.live) || {};
+  return {
+    kind,
+    on: kind === 'shade' ? positionOf(entry) > 0 : isOn(entry),
+    level: levelOf(entry),
+    position: positionOf(entry),
+    color: live.color || null,
+    reachable: live.reachable !== false,
+    stale: Boolean(entry && entry.stale),
+    unconfirmed: Boolean(entry && entry.unconfirmed),
+    commit: commitMode(entry),
+    title: (entry && entry.title) || (entry && entry.id) || '',
+  };
+}
+
+// --- dispatch -------------------------------------------------------------
+
+function fire(entry, segments, patch, trace) {
+  applyOptimistic(entry.stateTopic, patch, { deviceClass: entry.type });
+  setLastAction(trace);
+  // Fire-and-forget; failures surface via the optimistic revert timeout.
+  sendCommand([entry.module, entry.id, ...segments]).catch(() => {});
+}
+
+/** Toggle a light on/off. */
+export function toggle(entry) {
+  const next = !isOn(entry);
+  fire(entry, [next ? 'on' : 'off'], { power: next ? 'ON' : 'OFF' },
+    `${entry.title} ${next ? 'on' : 'off'}`);
+}
+
+/**
+ * Update a dim light's local display WITHOUT sending -- used during a
+ * 'release'-mode drag so the row fill and plan dot track the finger while the
+ * command is withheld until release. No optimistic pending/revert is armed.
+ * @param {object} entry
+ * @param {number} val 0-100
+ */
+export function previewLevel(entry, val) {
+  const v = clamp(val);
+  store.updateDevice(entry.stateTopic, (e) => ({
+    ...e,
+    live: { ...e.live, brightness: v, power: v > 0 ? 'ON' : 'OFF' },
+  }));
+}
+
+/** Commit a dim light level: optimistic + send + trace. */
+export function commitLevel(entry, val) {
+  const v = clamp(val);
+  fire(entry, [String(v)], { power: v > 0 ? 'ON' : 'OFF', brightness: v },
+    `${entry.title} → ${v}%`);
+}
+
+/** Update a shade's local display without sending (drag preview). */
+export function previewPosition(entry, val) {
+  const v = clamp(val);
+  store.updateDevice(entry.stateTopic, (e) => ({ ...e, live: { ...e.live, position: v } }));
+}
+
+/** Commit a shade position: optimistic + send + trace. */
+export function commitPosition(entry, val) {
+  const v = clamp(val);
+  fire(entry, [String(v)], { position: v }, `${entry.title} → ${v}%`);
+}
+
+/** Tap a shade: toggle fully open (0) / closed (100) by its current half. */
+export function toggleShade(entry) {
+  const next = positionOf(entry) < 50 ? 100 : 0;
+  fire(entry, [String(next)], { position: next },
+    `${entry.title} ${next === 0 ? 'open' : 'closed'}`);
+}
+
+function clamp(v) {
+  return Math.max(0, Math.min(100, Math.round(v)));
+}

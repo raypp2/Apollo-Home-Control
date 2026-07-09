@@ -1,6 +1,7 @@
 [{
 	"id":"shades",
 	"title":"Blackout Shades",
+	"room": "living",
 	"type": "Somfy-Bridge",
 	"address": "###.###.###.###",
 	"port": "8081",
@@ -45,6 +46,7 @@
 },{
 	"id":"door",
 	"title":"Door",
+	"room": "entrance",
 	// Alexa, Turn [on/off] [front door, downstairs door]
 	"type": "iTach_CC",
 	"address": "###.###.###.###",
@@ -63,6 +65,7 @@
 },{
 	"id":"theaterProjector",
 	"title":"Theater Projector",
+	"room": "living",
 	"type": "ip_control",
 	"address": "###.###.###.###",
 	"port": "4352",
@@ -85,6 +88,7 @@
 },{
 	"id":"anthem",
 	"title":"Anthem",
+	"room": "living",
 	"invocation":["Anthem"],
 	// Alexa, Turn [on/off] Anthem
 	"type": "ip_control",  // Speial type to manage Alexa commands
@@ -134,6 +138,7 @@
 },{
 	"id": "livingRoomAC",
 	"title": "Living Room Air Conditioner",
+	"room": "living",
 	"type": "iTach_ir",
 	"address": "###.###.###.###",
 	"icon": "ac_unit",
@@ -200,6 +205,7 @@
 },{
 	"id":"findMyIphone",
 	"title":"Find My iPhone",
+	"room": "utility",
 	"invocation":["Find My iPhone"],
 	"type": "findMyIphone",
 	"address": true,
@@ -215,6 +221,7 @@
 },{
 	"id":"lrEchoSpotify",
 	"title":"Spotify Playback on Living Room Echo",
+	"room": "living",
 	"invocation":[],
 	"type": "spotify",
 	"address": "XXXXXXXXXXXXX",

@@ -1,0 +1,100 @@
+/* Apollo v2 dashboard -- top-level app layout.
+   Responsive: desktop is a vertical column (top bar / stage / status strip)
+   whose stage is a horizontal split (plane left, command panel right); below
+   760px the stage stacks and the panel goes full width. */
+
+.app {
+  /* Fixed to the viewport (not min-height) so the tall 470x980 plane box is
+     CLIPPED by .plane-wrap rather than stretching the page. The command panel
+     scrolls internally for long device lists. */
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+  color: var(--text);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--hairline);
+  flex: none;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+}
+
+.wordmark {
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  font-size: 15px;
+}
+
+.topbar-time {
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 300;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: rgba(234, 229, 239, 0.4);
+}
+
+.topbar-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(234, 229, 239, 0.4);
+}
+
+.conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.stage {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.plane-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.panel-wrap {
+  width: 366px;
+  flex: none;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+@media (max-width: 760px) {
+  .stage {
+    flex-direction: column;
+  }
+  .plane-wrap {
+    flex: none;
+    height: 46vh;
+  }
+  .panel-wrap {
+    width: 100%;
+    flex: 1;
+  }
+}

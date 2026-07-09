@@ -2,6 +2,7 @@
 {
     "title": "Kitchen",
     "id": "kitchen",
+    "room": "kitchen",
     "icon": "icon-kitchen",
     "type": "insteon",
     "address": "XXXXXX",
@@ -18,6 +19,7 @@
 {
     "title": "Dining Room",
     "id": "diningRoom",
+    "room": "dining",
     "icon": "icon-dining_room",
     "type": "insteon",
     "address": "XXXXXX",
@@ -31,6 +33,7 @@
 {
     "title": "Living Room - Bookshelf",
     "id": "livingRoomBookshelf",
+    "room": "living",
     "icon": "icon-lr_bookshelf",
     "type": "insteon",
     "address": "XXXXXX",
@@ -44,6 +47,7 @@
 {
     "title": "Living Room - Couch",
     "id": "livingRoomCouch",
+    "room": "living",
     "icon": "icon-lr_couch",
     "type": "insteon",
     "address": "XXXXXX",
@@ -57,6 +61,7 @@
 {
     "title": "Office - Desk",
     "id": "officeDesk",
+    "room": "office",
     "icon": "icon-of_desk",
     "type": "insteon",
     "address": "XXXXXX",
@@ -70,6 +75,7 @@
 {
     "title": "Office - Wall",
     "id": "officeWall",
+    "room": "office",
     "icon": "icon-of_wall",
     "type": "insteon",
     "address": "XXXXXX",
@@ -83,6 +89,7 @@
 {
     "title": "Hall",
     "id": "hall",
+    "room": "hall",
     "icon": "icon-hall",
     "type": "insteon",
     "address": "XXXXXX",
@@ -96,6 +103,7 @@
 {
     "title": "Giant P",
     "id": "giantP",
+    "room": "living",
     "icon": "icon-giant_p",
     "type": "hue-group",
     "address": "5",
@@ -109,6 +117,7 @@
 {
     "title": "Bedroom Color",
     "id": "bedroomColor",
+    "room": "master",
     "icon": "icon-of_wall",
     "type": "hue-group",
     "address": "X",
@@ -134,6 +143,7 @@
 },{
 	"id":"ceiling",
 	"title":"Ceiling",
+	"room":"living",
     "fixture":"adj",
     "icon":"icon-of_wall",
 	"type": "dmxFixture",

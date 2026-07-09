@@ -12,18 +12,29 @@
  */
 
 // Load variables
-const { devices, deviceScenes, lights, lightingScenes, macros, logging }                                  
+const { devices, deviceScenes, lights, lightingScenes, macros, rooms, logging }
         = require('../index');
 
 // Orchestration Handlers
-const { handleRequest }                                   
+const { handleRequest }
         = require('./handler');
 
+const mqttTopics = require('./mqttTopics');
 
 var express = require('express');
+var path = require('path');
 var app = express();
 app.use(express.static('public'));
 // const mDNS = require('bonjour')();
+
+// Adds a `stateTopic` string (from `topicFn`) to a shallow copy of each entry,
+// WITHOUT mutating the shared in-memory config arrays -- those arrays carry
+// live runtime fields (e.g. `checked`/`status`) that other modules depend on.
+function withStateTopic(entries, topicFn) {
+    return entries.map(function(entry) {
+        return { ...entry, stateTopic: topicFn(entry) };
+    });
+}
 
 
 // IMPORTANT: this must be registered BEFORE the '/api' catch-all middleware
@@ -58,27 +69,49 @@ app.use('/list', function(request, response) {
     switch(request.url) {
         case "/devices":
             // console.log("Devices list requested");
-            response.json(devices);
+            response.json(withStateTopic(devices, function(e) { return mqttTopics.topicFor(e, 'state'); }));
             break;
         case "/deviceScenes":
             // console.log("Device Scenes list requested");
-            response.json(deviceScenes); 
+            response.json(deviceScenes);
             break;
          case "/lights":
             // console.log("Lights list requested");
-            response.json(lights);
+            response.json(withStateTopic(lights, function(e) { return mqttTopics.topicFor(e, 'state'); }));
             break;
         case "/lightingScenes":
             // console.log("Lighting Scenes list requested");
-            response.json(lightingScenes);
+            response.json(withStateTopic(lightingScenes, function(e) { return 'apollo/home/scene/' + e.id + '/state'; }));
             break;
         case "/macros":
             // console.log("Macros list requested");
-            response.json(macros);
+            response.json(withStateTopic(macros, function(e) { return 'apollo/home/macro/' + e.id + '/state'; }));
+            break;
+        case "/rooms":
+            // console.log("Rooms list requested");
+            response.json(rooms);
             break;
         default:
-            response.status(404).send("ERROR: You must specify a valid list -- devices, deviceScenes, lights, lightingScenes, or macros.")
+            response.status(404).send("ERROR: You must specify a valid list -- devices, deviceScenes, lights, lightingScenes, macros, or rooms.")
     }
+});
+
+// Serves the legacy AngularJS dashboard at /legacy while the new dashboard
+// (a later increment) takes over `/`. express.static('public') above still
+// serves the old asset paths (/js/..., /css/...) at root, so the old HTML's
+// relative asset refs keep resolving unchanged.
+app.get('/legacy', function(req, res) {
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
+
+// Serves the new Preact/Vite dashboard at /v2 (built by `web/` into
+// public/app/, base '/v2/'). express.static handles the built JS/CSS/asset
+// requests; the SPA fallback below is GET-only and only fires for unmatched
+// /v2/* paths (client-side routes), so it never swallows real static assets --
+// those are already resolved by express.static before this route is reached.
+app.use('/v2', express.static('public/app'));
+app.get('/v2/*', function(req, res) {
+    res.sendFile(path.join(__dirname, '..', 'public', 'app', 'index.html'));
 });
 
 app.use(function(req, res, next) {

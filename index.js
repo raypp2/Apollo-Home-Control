@@ -35,6 +35,7 @@ const lightsJSON            = './config/lights.json';           // Load Lights
 const lightingScenesJSON    = './config/lightingScenes.json';   // Load Lighting Scenes
 const macrosJSON            = './config/macros.json';           // Load Macros
 const insteonKeypadJSON     = './config/insteonKeypad.json';    // Load Insteon Keypad
+const roomsJSON              = './config/rooms.json';           // Load Rooms (dashboard redesign)
 
 // Load Devices using JSON5 to allow for comments
 const JSON5             = require('json5');
@@ -44,6 +45,15 @@ const lights            = JSON5.parse(fs.readFileSync(lightsJSON, 'utf8'));
 const lightingScenes    = JSON5.parse(fs.readFileSync(lightingScenesJSON, 'utf8'));
 const macros            = JSON5.parse(fs.readFileSync(macrosJSON, 'utf8'));
 const insteonKeypad     = JSON5.parse(fs.readFileSync(insteonKeypadJSON, 'utf8'));
+
+// rooms.json is new (dashboard redesign increment 0) and may not exist on disk
+// yet -- default to [] rather than crashing startup if it's missing.
+let rooms = [];
+try {
+    rooms = JSON5.parse(fs.readFileSync(roomsJSON, 'utf8'));
+} catch (e) {
+    console.log('rooms.json not loaded (%s) -- defaulting to []', e.code || e.message);
+}
 
 
 // For debug tracking
@@ -58,6 +68,7 @@ module.exports = {
     lightingScenes,
     macros,
     insteonKeypad,
+    rooms,
     logging
 }
 

@@ -1,0 +1,64 @@
+:root {
+  /* Backgrounds */
+  --bg-app: #141118;
+  --bg-panel: rgba(20, 17, 26, 0.7);
+  --bg-drill: #16131c;
+
+  /* Text */
+  --text: #eae5ef;
+  --text-secondary: rgba(234, 229, 239, 0.55);
+  --text-tertiary: rgba(234, 229, 239, 0.32);
+
+  /* Accent */
+  --accent: #a688e8;
+  --accent-fill: rgba(166, 136, 232, 0.16);
+
+  /* Amber */
+  --amber: #f2a65e;
+  --amber-text: #f2c79a;
+  --fixture-glow: #ffb267;
+
+  /* Status */
+  --status-green: #7ed9a0;
+  --ac-blue: rgba(120, 185, 255, 0.5);
+  --ac-blue-border: rgba(140, 190, 255, 0.55);
+
+  /* Light swatches */
+  --c1: #f2a65e;
+  --c2: #e86a6a;
+  --c3: #a688e8;
+  --c4: #6ab5e8;
+  --c5: #7ed9a0;
+  --c6: #e8d36a;
+
+  /* Hairline */
+  --hairline: rgba(234, 229, 239, 0.1);
+
+  /* Radii */
+  --r-row: 11px;
+  --r-btn: 9px;
+  --r-pill: 999px;
+  --r-sheet: 18px;
+
+  /* Motion */
+  --ease-turn: cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text);
+  font-family: 'Outfit', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100dvh;
+}

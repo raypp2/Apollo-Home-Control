@@ -230,6 +230,41 @@ function publishUnreachable(entry) {
 }
 
 /**
+ * Seeds the merge cache from a RETAINED message replayed off the broker at
+ * startup (or reconnect), WITHOUT publishing anything or touching hardware.
+ *
+ * Why this exists: publishState() merges a partial update (e.g. a
+ * brightness-only change) on top of `stateCache`, but that cache starts
+ * empty every time the process restarts -- it is only ever populated by this
+ * process's own outgoing publishState()/publishUnreachable() calls, never
+ * from the broker's retained state. Consequence: after a restart, the FIRST
+ * partial publishState() for a device would merge against {} and overwrite
+ * the device's retained full state with a partial object, losing fields
+ * (e.g. losing `power` on a brightness-only poll update). Seeding the cache
+ * from the retained replay at boot closes that gap.
+ *
+ * Deliberately conservative: only fills a cache slot that's still empty. If
+ * this process has already published (or otherwise learned) state for this
+ * topic by the time a retained replay arrives, that in-memory value is
+ * treated as more current and is left alone -- a replayed retained message
+ * must never clobber fresher in-process state.
+ *
+ * @param {string} topic - the full canonical `.../state` topic (same string
+ *   topicFor()/publishState() use as the cache key)
+ * @param {object} payload - the retained message payload (already JSON.parse'd
+ *   by mqttClient); non-object payloads are ignored
+ */
+function seedFromRetained(topic, payload) {
+    if (!payload || typeof payload !== 'object') {
+        return;
+    }
+    if (stateCache.has(topic)) {
+        return;
+    }
+    stateCache.set(topic, payload);
+}
+
+/**
  * Returns the cached state object for an entry, or null if nothing has been
  * published yet.
  * @param {object} entry
@@ -278,6 +313,7 @@ module.exports = {
     publishState,
     publishUnreachable,
     lastState,
+    seedFromRetained,
     findByTopic,
     isAlexaStateful,
     _init,

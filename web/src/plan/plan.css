@@ -1,0 +1,114 @@
+/* Apollo v2 dashboard -- isometric floorplan surface (increment 2, "Beacon v3"). */
+
+.plan-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  /* Center the 470x980 plane box so the isometric transform pivots around the
+     plane's center (235,490) at the viewport center, not below it. The box is
+     taller than the stage; .plane-wrap's overflow:hidden clips the excess. */
+  align-items: center;
+}
+
+.plan-caption {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: rgba(234, 229, 239, 0.35);
+  pointer-events: none;
+}
+
+/* Outer wrapper: continuous idle sway. Always running, independent of
+   selection state, so it composes with .plan-inner's transform rather than
+   overwriting it (each wrapper owns exactly one transform declaration). */
+.plan-outer {
+  position: relative;
+  width: 470px;
+  height: 980px;
+  animation: plan-sway 16s ease-in-out alternate infinite;
+}
+
+@keyframes plan-sway {
+  from {
+    transform: rotate(-1.1deg) translateY(-4px);
+  }
+  to {
+    transform: rotate(1.1deg) translateY(4px);
+  }
+}
+
+/* Inner wrapper: base isometric transform, replaced wholesale (via inline
+   style) with the selection-aware variant computed in Plane.jsx. The
+   transition here is what animates between the two. */
+.plan-inner {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transition: transform 1.1s var(--ease-turn, cubic-bezier(0.22, 0.8, 0.24, 1));
+}
+
+.plan-room {
+  position: absolute;
+  box-sizing: border-box;
+  background: rgba(234, 229, 239, 0.045);
+  border: 1.5px solid rgba(234, 229, 239, 0.22);
+}
+
+.plan-room--selectable {
+  cursor: pointer;
+}
+
+.plan-room--selectable:hover {
+  background: rgba(166, 136, 232, 0.1);
+}
+
+/* Context-only rooms (bath, guest): no hover/click affordance, slightly
+   dimmer than the interactive rooms. */
+.plan-room--fixed {
+  opacity: 0.82;
+}
+
+.plan-room__label {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  color: rgba(234, 229, 239, 0.75);
+  pointer-events: none;
+}
+
+.plan-room--fixed .plan-room__label {
+  color: rgba(234, 229, 239, 0.5);
+}
+
+.plan-room__selected-overlay {
+  position: absolute;
+  inset: -4px;
+  border: 2px solid #a688e8;
+  box-shadow: 0 0 18px #a688e8;
+  pointer-events: none;
+}
+
+/* Occupancy glow: radial amber wash, opacity driven per-room from lightsOn
+   count (see Room.jsx); absent entirely (not rendered) when no lights in the
+   room are on. */
+.plan-room__glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255, 178, 102, 0.9) 0%, rgba(255, 178, 102, 0) 72%);
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.plan-furniture {
+  box-sizing: border-box;
+}

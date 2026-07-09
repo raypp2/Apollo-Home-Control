@@ -15,16 +15,25 @@
  *               device's own last-known state with reachable:false. It does
  *               not touch hardware directly.
  *
+ *               Also piggybacks the mqttTopics.js merge-cache boot-seeding fix
+ *               on this same `.../state` subscription: since this handler
+ *               already receives every retained replay at startup/reconnect,
+ *               _handleState() forwards retained deliveries to
+ *               mqttTopics.seedFromRetained() so the merge cache isn't empty
+ *               for the first partial publishState() after a restart. See
+ *               _handleState()'s doc comment.
+ *
  *               TESTING NOTE: like mqttTopics.js and lightingInsteonListener.js,
  *               this module's dependencies (mqttClient.subscribe/publish,
- *               mqttTopics.findByTopic/publishUnreachable) are lazily pulled in
- *               on first real use via ensureInit(), so merely requiring this
- *               file does not boot index.js or connect to a broker. Tests call
- *               `_init({ subscribe, publish, findByTopic, publishUnreachable })`
- *               with fixture/spy functions first. The periodic timers
- *               (`_tick(now)` for staleness, `_publishSummary(now)` for the
- *               summary) both take an explicit `now` (ms since epoch) so tests
- *               never need real timers.
+ *               mqttTopics.findByTopic/publishUnreachable/seedFromRetained) are
+ *               lazily pulled in on first real use via ensureInit(), so merely
+ *               requiring this file does not boot index.js or connect to a
+ *               broker. Tests call `_init({ subscribe, publish, findByTopic,
+ *               publishUnreachable })` with fixture/spy functions first
+ *               (`seedFromRetained` is optional there, defaulting to a no-op).
+ *               The periodic timers (`_tick(now)` for staleness,
+ *               `_publishSummary(now)` for the summary) both take an explicit
+ *               `now` (ms since epoch) so tests never need real timers.
  */
 
 'use strict';
@@ -33,6 +42,7 @@ let doSubscribe;
 let doPublish;
 let doFindByTopic;
 let doPublishUnreachable;
+let doSeedFromRetained;
 let initialized = false;
 
 /**
@@ -50,6 +60,7 @@ function ensureInit() {
     doPublish = mqttClient.publish;
     doFindByTopic = mqttTopics.findByTopic;
     doPublishUnreachable = mqttTopics.publishUnreachable;
+    doSeedFromRetained = mqttTopics.seedFromRetained;
     initialized = true;
 }
 
@@ -61,12 +72,15 @@ function ensureInit() {
  * @param {function} deps.publish - (topic, payload, opts) => void
  * @param {function} deps.findByTopic - (topic) => entry|null
  * @param {function} deps.publishUnreachable - (entry) => object
+ * @param {function} [deps.seedFromRetained] - (topic, payload) => void; optional,
+ *   defaults to a no-op so existing test callers that don't pass it keep working
  */
-function _init({ subscribe, publish, findByTopic, publishUnreachable }) {
+function _init({ subscribe, publish, findByTopic, publishUnreachable, seedFromRetained }) {
     doSubscribe = subscribe;
     doPublish = publish;
     doFindByTopic = findByTopic;
     doPublishUnreachable = publishUnreachable;
+    doSeedFromRetained = seedFromRetained || (() => {});
     initialized = true;
 }
 
@@ -151,11 +165,24 @@ function publishDeviceHealth(stateTopic, status) {
  * Clears any stale mark and publishes a recovery "ok" health status when a
  * fresh message arrives on a previously-stale topic.
  *
+ * Also piggybacks the mqttTopics.js merge-cache seeding fix here (rather than
+ * a second dedicated subscription) since this handler already sees every
+ * retained replay of `apollo/+/+/+/state` at startup/reconnect: when `retain`
+ * is true, forwards (topic, payload) to mqttTopics.seedFromRetained() so a
+ * device's first partial publishState() after a restart merges against its
+ * last-known full state instead of {}. seedFromRetained() only fills empty
+ * cache slots, so this is safe to call on every retained delivery (including
+ * reconnects) without risking clobbering fresher in-process state.
+ *
  * Defensive: never throws on a malformed payload.
  * @param {string} topic
  * @param {*} payload
+ * @param {Buffer} [_raw] - unused; present so this matches mqttClient's
+ *   handler(topic, payload, rawBuffer, retain) signature positionally
+ * @param {boolean} [retain] - true when this delivery is a retained replay
+ *   (broker's retain flag for this delivery -- see mqttClient.js doc comment)
  */
-function _handleState(topic, payload) {
+function _handleState(topic, payload, _raw, retain) {
     ensureInit();
 
     const receivedAtMs = Date.now();
@@ -186,6 +213,14 @@ function _handleState(topic, payload) {
     if (wasStale) {
         console.log('Health: %s has recovered', topic);
         publishDeviceHealth(topic, 'ok');
+    }
+
+    if (retain) {
+        try {
+            doSeedFromRetained(topic, payload);
+        } catch (err) {
+            console.log('Health: seedFromRetained failed for %s: %s', topic, err && err.message);
+        }
     }
 }
 
@@ -333,8 +368,18 @@ function start() {
  * Returns the current health snapshot: the same summary shape published to
  * `apollo/health/summary`, plus a per-device array. This is the exact
  * `/api/health` payload (see webServer.js).
- * @returns {{timestamp: number, devices: number, stale: string[], bridges: object,
- *            degraded: boolean, deviceDetail: Array<{topic: string, lastSeen: number,
+ *
+ * NOTE on time units: `summary.timestamp` (spread in from buildSummary(), the
+ * same object shape published to the MQTT `apollo/health/summary` topic) is
+ * in UNIX SECONDS -- that's left unchanged here since existing MQTT consumers
+ * depend on it. Everything else in this HTTP payload is explicitly in
+ * MILLISECONDS: the added top-level `nowMs` and each device's `lastSeenMs`
+ * (renamed from the old ambiguous `lastSeen`, which looked like it might be
+ * seconds next to `timestamp` but was always Date.now()-based ms). `ageSeconds`
+ * remains seconds, as its name already says.
+ * @returns {{timestamp: number, nowMs: number, devices: number, stale: string[],
+ *            bridges: object, degraded: boolean,
+ *            deviceDetail: Array<{topic: string, lastSeenMs: number,
  *            ageSeconds: number, stale: boolean, state: *}>}}
  */
 function getHealth() {
@@ -346,7 +391,7 @@ function getHealth() {
     for (const [topic, record] of stateByTopic) {
         deviceDetail.push({
             topic,
-            lastSeen: record.lastSeen,
+            lastSeenMs: record.lastSeen,
             ageSeconds: Math.round((now - record.lastSeen) / 1000),
             stale: record.stale,
             state: record.lastState,
@@ -355,6 +400,7 @@ function getHealth() {
 
     return {
         ...summary,
+        nowMs: now,
         deviceDetail,
     };
 }
