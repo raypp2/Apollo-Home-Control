@@ -21,17 +21,17 @@ import { AvCluster, NowPlaying } from '../av/index.js';
 const PANEL_KINDS = new Set(['dim', 'switch', 'color', 'shade']);
 const FONT = "'Outfit', system-ui, sans-serif";
 
+// Fills its wrapper (.panel-wrap owns width/height/border/radius, which differ
+// desktop vs. the phone bottom-sheet). RoomPanel just paints + scrolls inside.
 const PANEL_STYLE = {
   position: 'relative',
-  width: 365,
-  flexShrink: 0,
+  width: '100%',
+  height: '100%',
   boxSizing: 'border-box',
-  borderLeft: '1px solid var(--hairline, rgba(234, 229, 239, 0.1))',
   background: 'var(--bg-panel, rgba(20, 17, 26, 0.7))',
   padding: '24px 26px',
   display: 'flex',
   flexDirection: 'column',
-  height: '100dvh',
   overflowY: 'auto',
 };
 

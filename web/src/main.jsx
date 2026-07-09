@@ -62,8 +62,10 @@ function App() {
           <span class="wordmark">APOLLO</span>
           <span class="topbar-time">{formatTime(now)}</span>
         </div>
-        <div class="topbar-right">
+        <div class="topbar-scenes">
           <SceneBar />
+        </div>
+        <div class="topbar-util">
           <UtilityRail />
           <span
             class="conn-dot"
