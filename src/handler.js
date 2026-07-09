@@ -91,7 +91,9 @@ function handleRequest(request, response){
             return;
         
         case "LIGHTS":
-            lighting_device_command(logging.operation_num, apiDevice, apiCommand);
+            // apiParam1 carries the hex for a COLOR command
+            // (/api/LIGHTS/<id>/COLOR/<hex>); ignored by other commands.
+            lighting_device_command(logging.operation_num, apiDevice, apiCommand, apiParam1);
             if (typeof response != 'undefined') { response.end("Completed processing request."); }
             return;
 
@@ -354,14 +356,16 @@ function handleMacro(debugId, apiDevice, apiCommand, response) {
 
     // Search for the macro
     let macro_commands;
+    let macroId;
     let passOnOff=false;
     for (const macro of macros) {
         if (macro.id && macro.id.toUpperCase() === apiDevice) {
           macro_commands = macro.commands;
+          macroId = macro.id;
           passOnOff = macro.passOnOff;
         }
     }
-    
+
     if(!macro_commands) {
         console.log("%d - Macro commands not found", debugId);
         if (typeof response != 'undefined') { response.status(404).send("ERROR: Macro not found."); }
@@ -401,8 +405,14 @@ function handleMacro(debugId, apiDevice, apiCommand, response) {
             }
     }
 
+    // Record the macro's on/off activation for the dashboard's scene/macro
+    // shadow state (retained apollo/home/macro/<id>/state). Lazy require to
+    // avoid load-order coupling; safe no-op in dry-run / broker-down.
+    try { require('./sceneShadow').onMacroActivated(macroId, apiCommand); }
+    catch (e) { console.log("%d - sceneShadow macro record skipped: %s", debugId, e && e.message); }
+
     // Respond with something to kill connection
-    if (typeof response != 'undefined') { response.end("Completed processing request."); } 
+    if (typeof response != 'undefined') { response.end("Completed processing request."); }
 }
 
 

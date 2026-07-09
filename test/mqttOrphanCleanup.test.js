@@ -100,6 +100,19 @@ test('a non-retained message during the window for an unknown topic is not prune
     assert.strictEqual(publishCalls.length, 0);
 });
 
+test('reserved scene/macro/spotify state topics are never pruned', async () => {
+    // These match apollo/+/+/+/state but are app-published state (sceneShadow,
+    // spotify), not device state -- pruning them would wipe scene shadow state
+    // on every restart. Regression guard for the increment-3 fix.
+    const sweep = orphanCleanup.cleanupOrphanedStateTopics();
+    simulateDelivery('apollo/home/scene/hangoutMode/state', true);
+    simulateDelivery('apollo/home/macro/studioMacro/state', true);
+    simulateDelivery('apollo/home/spotify/player/state', true);
+    await sweep;
+
+    assert.strictEqual(publishCalls.length, 0);
+});
+
 test('multiple orphans are each pruned exactly once and each logged', async () => {
     const originalLog = console.log;
     const logLines = [];

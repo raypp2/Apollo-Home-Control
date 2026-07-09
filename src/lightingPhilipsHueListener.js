@@ -120,8 +120,52 @@ function _init({ lights: lightsOverride, publish: publishOverride, uuidMap: uuid
 // uuid (CLIP v2 resource id) -> lights.json entry
 let uuidMap = new Map();
 
-// uuid -> { color, color_temperature } -- stashed for Stage 12, never published yet.
+// uuid -> { color, color_temperature } -- stashed alongside the derived hex
+// published in state.color (see _xyToHex below); color_temperature itself is
+// still not published (full Stage 12 CT support is out of scope here).
 const trackedExtras = new Map();
+
+/**
+ * Converts a CIE 1931 xy chromaticity point (plus 0-1 brightness) to an
+ * approximate '#rrggbb' hex string (lowercase). This is the standard Philips
+ * reverse xy->RGB transform -- the same formula node-hue-api ships in its
+ * (unexported) rgb.ts, reimplemented here rather than reaching into that
+ * package's internals. It's documented there as "a gross approximation" of
+ * true gamut-aware conversion, but adequate for reflecting an externally-set
+ * color back onto the dashboard as a swatch.
+ * @param {number} x
+ * @param {number} y
+ * @param {number} [brightness=1] - 0-1 (Y in the CIE XYZ conversion)
+ * @returns {string|null} '#rrggbb', or null if x/y aren't usable
+ */
+function _xyToHex(x, y, brightness) {
+    if (typeof x !== 'number' || typeof y !== 'number' || y === 0) {
+        return null;
+    }
+    const Y = typeof brightness === 'number' ? brightness : 1;
+    const X = (Y / y) * x;
+    const Z = (Y / y) * (1 - x - y);
+
+    let rgb = [
+        X * 1.612 - Y * 0.203 - Z * 0.302,
+        -X * 0.509 + Y * 1.412 + Z * 0.066,
+        X * 0.026 - Y * 0.072 + Z * 0.962,
+    ];
+
+    // Reverse gamma correction.
+    rgb = rgb.map((c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055));
+    // Clamp negative components to zero.
+    rgb = rgb.map((c) => Math.max(0, c));
+
+    // If any component overflows 1, scale the whole triplet down to fit.
+    const max = Math.max(rgb[0], rgb[1], rgb[2]);
+    if (max > 1) {
+        rgb = rgb.map((c) => c / max);
+    }
+
+    const [r, g, b] = rgb.map((c) => Math.min(255, Math.round(c * 255)));
+    return '#' + [r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('');
+}
 
 /**
  * Parses a CLIP v2 `id_v1` field ("/groups/5") into the legacy group number
@@ -300,7 +344,11 @@ function _handleBatch(batch) {
  * fields actually present in the event are published (publishState's own
  * merge preserves anything not present, e.g. a brightness-only event must
  * not fabricate a power value). Also stashes color/color_temperature on the
- * tracked-extras map for Stage 12, without publishing them yet.
+ * tracked-extras map (kept for future color_temperature support -- full CT
+ * publishing is still out of scope here); `item.color`'s xy point, if
+ * present, is additionally converted to a '#rrggbb' hex and included in the
+ * published state so an external color change (e.g. made from the Hue app)
+ * reflects on the dashboard.
  * @param {object} item
  */
 function _handleResourceItem(item) {
@@ -330,6 +378,18 @@ function _handleResourceItem(item) {
     }
     if (item.dimming && typeof item.dimming.brightness === 'number') {
         state.brightness = Math.round(item.dimming.brightness);
+    }
+    if (item.color && item.color.xy && typeof item.color.xy.x === 'number' && typeof item.color.xy.y === 'number') {
+        // Prefer this same event's brightness for the xy->RGB conversion;
+        // fall back to the last known brightness on the entry, then to full
+        // brightness if neither is known (xy alone doesn't carry luminance).
+        const briPercent = typeof state.brightness === 'number' ? state.brightness
+            : typeof entry.status === 'number' ? entry.status
+                : 100;
+        const hex = _xyToHex(item.color.xy.x, item.color.xy.y, briPercent / 100);
+        if (hex) {
+            state.color = hex;
+        }
     }
 
     if (Object.keys(state).length === 0) {
@@ -483,10 +543,13 @@ let fallbackPollTimer = null;
  * derives the partial canonical state to publish, or null if nothing usable
  * is present. `action.on` is preferred for power (matches what a command
  * just set); `state.any_on` is the fallback. `action.bri` is 0-254 and is
- * scaled to a 0-100 percentage. Exported for direct unit testing -- never
- * touches the network itself.
+ * scaled to a 0-100 percentage. `action.xy` (a [x, y] pair, same CIE
+ * chromaticity the SSE path receives) is converted to a '#rrggbb' hex the
+ * same way _handleResourceItem does, using this same tick's brightness for
+ * the conversion. Exported for direct unit testing -- never touches the
+ * network itself.
  * @param {object} group
- * @returns {{power?: string, brightness?: number}|null}
+ * @returns {{power?: string, brightness?: number, color?: string}|null}
  */
 function _mapV1GroupState(group) {
     if (!group) {
@@ -503,6 +566,16 @@ function _mapV1GroupState(group) {
 
     if (group.action && typeof group.action.bri === 'number') {
         state.brightness = Math.round((group.action.bri / 254) * 100);
+    }
+
+    if (group.action && Array.isArray(group.action.xy) && group.action.xy.length === 2) {
+        const briFraction = typeof state.brightness === 'number' ? state.brightness / 100
+            : typeof group.action.bri === 'number' ? group.action.bri / 254
+                : 1;
+        const hex = _xyToHex(group.action.xy[0], group.action.xy[1], briFraction);
+        if (hex) {
+            state.color = hex;
+        }
     }
 
     return Object.keys(state).length > 0 ? state : null;
@@ -647,5 +720,6 @@ module.exports = {
     _handleResourceItem,
     _buildUuidMapFromResource,
     _mapV1GroupState,
+    _xyToHex,
     _resetForTesting,
 };

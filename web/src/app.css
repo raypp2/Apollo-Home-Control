@@ -45,16 +45,11 @@
   color: rgba(234, 229, 239, 0.4);
 }
 
-.topbar-conn {
-  display: inline-flex;
+.topbar-right {
+  display: flex;
   align-items: center;
-  gap: 0.45rem;
-  font-family: 'Outfit', system-ui, sans-serif;
-  font-weight: 400;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(234, 229, 239, 0.4);
+  gap: 0.9rem;
+  min-width: 0; /* let the scene bar's inner scroller shrink/scroll on mobile */
 }
 
 .conn-dot {

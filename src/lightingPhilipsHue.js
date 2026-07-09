@@ -27,6 +27,19 @@
  *                here, so there's no single group state to guess; SSE reports
  *                whatever groups the scene actually changed.
  *
+ *                Color (Stage 12, pulled forward for Hue-only groups): the
+ *                installed node-hue-api (5.0.0-beta.16, via
+ *                @peter-murray/hue-bridge-model) only exposes an `.rgb()`
+ *                helper on the per-LIGHT state model (LightState), not on the
+ *                per-GROUP state model (GroupState/GroupLightState) -- a
+ *                group's member lights can have different color gamuts, so
+ *                there's no single gamut to convert against. GroupLightState
+ *                does inherit raw `.hue(0-65535)` and `.saturation(0-100%)`
+ *                setters from BaseStates/CommonStates, which every Hue color
+ *                bulb honors regardless of gamut, so hue_group_command
+ *                converts the incoming hex to HSV and drives those instead of
+ *                xy/rgb.
+ *
  */
 
 
@@ -79,16 +92,84 @@ function findLightByGroup(groupHue) {
 }
 
 /**
+ * Parses a 6-char hex color string (with or without a leading '#',
+ * case-insensitive) into integer r/g/b components plus the normalized
+ * lowercase 6-char hex (no '#'). Returns null if the string isn't a valid
+ * 6-char hex triplet.
+ * @param {string} colorHex
+ * @returns {{hex: string, r: number, g: number, b: number}|null}
+ */
+function parseHexColor(colorHex) {
+  if (typeof colorHex !== 'string') {
+    return null;
+  }
+  const match = colorHex.trim().replace(/^#/, '').match(/^([0-9a-fA-F]{6})$/);
+  if (!match) {
+    return null;
+  }
+  const hex = match[1].toLowerCase();
+  const intVal = parseInt(hex, 16);
+  return {
+    hex,
+    r: (intVal >> 16) & 0xff,
+    g: (intVal >> 8) & 0xff,
+    b: intVal & 0xff,
+  };
+}
+
+/**
+ * Converts 0-255 RGB components to the raw hue (0-65535) and saturation
+ * (0-100%) values consumed by GroupLightState's `.hue()`/`.saturation()`
+ * setters (see the module doc comment for why hue/sat is used instead of
+ * xy/rgb for groups). Value/brightness is intentionally not derived here --
+ * a color command doesn't touch the group's current brightness.
+ * @param {number} r
+ * @param {number} g
+ * @param {number} b
+ * @returns {{hue: number, sat: number}}
+ */
+function rgbToHueSat(r, g, b) {
+  const rN = r / 255;
+  const gN = g / 255;
+  const bN = b / 255;
+  const max = Math.max(rN, gN, bN);
+  const min = Math.min(rN, gN, bN);
+  const delta = max - min;
+
+  let h = 0;
+  if (delta !== 0) {
+    if (max === rN) {
+      h = 60 * (((gN - bN) / delta) % 6);
+    } else if (max === gN) {
+      h = 60 * ((bN - rN) / delta + 2);
+    } else {
+      h = 60 * ((rN - gN) / delta + 4);
+    }
+  }
+  if (h < 0) {
+    h += 360;
+  }
+  const s = max === 0 ? 0 : delta / max;
+
+  return {
+    hue: Math.round((h / 360) * 65535),
+    sat: Math.round(s * 100),
+  };
+}
+
+/**
  * Publishes optimistic (source:"command") state for a group command that
  * just succeeded. ON/OFF publish just the power field; a numeric brightness
- * command implies the group is now on at that level. Any other value (should
- * be unreachable -- hue_group_command already branched on these same three
- * cases to build groupState) is skipped. No-op if the group has no matching
- * lights.json entry.
+ * command implies the group is now on at that level; a COLOR command
+ * publishes the group as on plus the normalized '#rrggbb' color. Any other
+ * value (should be unreachable -- hue_group_command already branched on
+ * these same cases to build groupState) is skipped. No-op if the group has
+ * no matching lights.json entry.
  * @param {string|number} groupHue
  * @param {string} lighting_command - already uppercased
+ * @param {string} [colorHex] - normalized (lowercase, no '#') 6-char hex, only for COLOR
  */
-function publishOptimisticGroupState(groupHue, lighting_command) {
+function publishOptimisticGroupState(groupHue, lighting_command, colorHex) {
   const entry = findLightByGroup(groupHue);
   if (!entry) {
     return;
@@ -100,12 +181,16 @@ function publishOptimisticGroupState(groupHue, lighting_command) {
     mqttTopics.publishState(entry, { power: 'ON' }, 'command');
   } else if (lighting_command === 'OFF') {
     mqttTopics.publishState(entry, { power: 'OFF' }, 'command');
+  } else if (lighting_command === 'COLOR') {
+    if (typeof colorHex === 'string') {
+      mqttTopics.publishState(entry, { power: 'ON', color: '#' + colorHex.toLowerCase() }, 'command');
+    }
   } else if (!isNaN(lighting_command)) {
     mqttTopics.publishState(entry, { power: 'ON', brightness: Number(lighting_command) }, 'command');
   }
 }
 
-async function hue_group_command(operation_num, groupHue, lighting_command) {
+async function hue_group_command(operation_num, groupHue, lighting_command, colorHex) {
   const api = await initializeApi();
   let groupState;
   lighting_command = lighting_command.toUpperCase(); // Make case insensitive
@@ -117,6 +202,16 @@ async function hue_group_command(operation_num, groupHue, lighting_command) {
     } else if (lighting_command === 'ON') {
       // console.log("Attempting to turn ON group %s", groupHue);
       groupState = new GroupLightState().on();
+    } else if (lighting_command === 'COLOR') {
+      const rgb = parseHexColor(colorHex);
+      if (!rgb) {
+        console.log(`${operation_num} - ERR: Invalid color hex "${colorHex}" for group ${groupHue}`);
+        return;
+      }
+      const { hue, sat } = rgbToHueSat(rgb.r, rgb.g, rgb.b);
+      // Setting a color implies power ON.
+      groupState = new GroupLightState().on().hue(hue).saturation(sat);
+      colorHex = rgb.hex; // normalized for publishOptimisticGroupState below
     } else {
       groupState = new GroupLightState().brightness(lighting_command);
     }
@@ -124,7 +219,7 @@ async function hue_group_command(operation_num, groupHue, lighting_command) {
     await api.groups.setGroupState(groupHue, groupState);
     console.log(`${operation_num} - Successfully executed lighting command: ${lighting_command}`);
 
-    publishOptimisticGroupState(groupHue, lighting_command);
+    publishOptimisticGroupState(groupHue, lighting_command, colorHex);
   } catch (err) {
     console.log(`${operation_num} - ERR: Failed to execute lighting command: ${err}`);
   }

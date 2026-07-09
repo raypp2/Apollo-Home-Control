@@ -30,8 +30,10 @@ export function kindOf(entry) {
   if (!entry) return 'other';
   if (entry.type === 'Somfy-Bridge') return 'shade';
   if (entry.module === 'LIGHTS') {
-    // Insteon/Hue/DMX dim; Shelly/WLED are on/off relays. `alexa.isDimmable`
-    // is the authoritative dimmable flag carried in config.
+    // Color-capable Hue lights (config `isColor`) render as a dim row plus a
+    // swatch picker. Otherwise: Insteon/Hue/DMX dim, Shelly/WLED on/off relays.
+    // `alexa.isDimmable` is the authoritative dimmable flag carried in config.
+    if (entry.isColor) return 'color';
     return entry.alexa && entry.alexa.isDimmable ? 'dim' : 'switch';
   }
   return 'other';
@@ -128,6 +130,21 @@ export function commitLevel(entry, val) {
     `${entry.title} → ${v}%`);
 }
 
+// The design's fixed swatch palette for color-capable lights.
+export const COLOR_CHOICES = ['#f2a65e', '#e86a6a', '#a688e8', '#6ab5e8', '#7ed9a0', '#e8d36a'];
+
+/**
+ * Set a color-capable light's color: optimistic + send + trace. Command path
+ * is /api/LIGHTS/<id>/COLOR/<hex-without-#>; setting a color implies power on.
+ * @param {object} entry
+ * @param {string} hex - '#rrggbb' or 'rrggbb'
+ */
+export function setColor(entry, hex) {
+  const clean = hex.replace('#', '').toLowerCase();
+  fire(entry, ['COLOR', clean], { power: 'ON', color: '#' + clean },
+    `${entry.title} → #${clean}`);
+}
+
 /** Update a shade's local display without sending (drag preview). */
 export function previewPosition(entry, val) {
   const v = clamp(val);
@@ -149,4 +166,27 @@ export function toggleShade(entry) {
 
 function clamp(v) {
   return Math.max(0, Math.min(100, Math.round(v)));
+}
+
+// --- scenes & macros ------------------------------------------------------
+// Scene/macro entries live in store.scenes / store.macros keyed by id, each
+// carrying an `active` flag (scenes reconciled by fingerprint drift, macros a
+// last-activation boolean). Dispatch is /api/LIGHTINGSCENES/<id>/<on|off> and
+// /api/MACROS/<id>/<on|off>; we optimistically flip `active` locally and let
+// the retained apollo/home/{scene,macro}/<id>/state message reconcile.
+
+/** Toggle a lighting scene on/off. */
+export function toggleScene(entry) {
+  const next = !entry.active;
+  store.updateScene(store.scenes, entry.id, (e) => ({ ...e, active: next }));
+  setLastAction(`${entry.title} ${next ? 'on' : 'off'}`);
+  sendCommand(['LIGHTINGSCENES', entry.id, next ? 'on' : 'off']).catch(() => {});
+}
+
+/** Toggle a macro on/off. */
+export function toggleMacro(entry) {
+  const next = !entry.active;
+  store.updateScene(store.macros, entry.id, (e) => ({ ...e, active: next }));
+  setLastAction(`${entry.title} ${next ? 'on' : 'off'}`);
+  sendCommand(['MACROS', entry.id, next ? 'on' : 'off']).catch(() => {});
 }

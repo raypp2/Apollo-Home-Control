@@ -175,6 +175,16 @@ if (DRY_RUN) {
 // Read-only: runs in dry-run too, since it never sends device commands.
 require('./src/healthMonitor').start();
 
+// Scene shadow state (dashboard redesign, increment 3 -- see
+// documentation/dashboard-redesign-plan.md §4.2). Subscribes to
+// apollo/+/+/+/state to learn scene activation fingerprints and detect
+// member drift, publishing apollo/home/scene/<id>/state and
+// apollo/home/macro/<id>/state. lighting.js's scene_command() and
+// handler.js's handleMacro() call its onSceneActivated()/onMacroActivated()
+// directly. Read + shadow-publish only (no hardware commands), so it's safe
+// in dry-run and with the broker down, same as healthMonitor above.
+require('./src/sceneShadow').start();
+
 // Spotify now-playing publisher (Stage 9, issue #22) -- opt-in via
 // SPOTIFY_NOW_PLAYING=1 since it costs a Spotify API call every 10s around
 // the clock; not worth running until Stage 11 puts a now-playing card on the

@@ -259,7 +259,7 @@ test('an event with neither on nor dimming publishes nothing', () => {
     assert.strictEqual(published.length, 0);
 });
 
-test('color/color_temperature fields are stashed but never published (Stage 12 groundwork)', () => {
+test('color.xy is converted to a #rrggbb hex and published (Stage 12 color, pulled forward for Hue)', () => {
     listener._handleResourceItem({
         id: GIANT_P_UUID,
         type: 'grouped_light',
@@ -268,7 +268,40 @@ test('color/color_temperature fields are stashed but never published (Stage 12 g
     });
 
     assert.strictEqual(published.length, 1);
-    assert.strictEqual('color' in published[0].payload, false, 'color must not be published yet');
+    assert.match(published[0].payload.color, /^#[0-9a-f]{6}$/);
+});
+
+test('color.xy is also stashed on trackedExtras alongside being published', () => {
+    // No direct getter for trackedExtras -- exercised indirectly via a second
+    // event reusing the same uuid to confirm nothing throws on overwrite.
+    listener._handleResourceItem({ id: GIANT_P_UUID, type: 'grouped_light', color: { xy: { x: 0.3, y: 0.3 } } });
+    assert.doesNotThrow(() => {
+        listener._handleResourceItem({ id: GIANT_P_UUID, type: 'grouped_light', color: { xy: { x: 0.6, y: 0.35 } } });
+    });
+});
+
+test('color_temperature alone is stashed but not published (still out of scope)', () => {
+    // Uses sideLamp -- see the sideLamp fixture comment above -- so a prior
+    // test's published color for the same topic can't merge forward here.
+    listener._handleResourceItem({
+        id: SIDE_LAMP_UUID,
+        type: 'grouped_light',
+        on: { on: true },
+        color_temperature: { mirek: 300 },
+    });
+
+    assert.strictEqual(published.length, 1);
+    assert.strictEqual('color' in published[0].payload, false);
+});
+
+test('_xyToHex converts a known xy+brightness point to a plausible hex string', () => {
+    const hex = listener._xyToHex(0.3, 0.3, 1);
+    assert.match(hex, /^#[0-9a-f]{6}$/);
+});
+
+test('_xyToHex returns null for non-numeric or zero-y input', () => {
+    assert.strictEqual(listener._xyToHex(undefined, 0.3, 1), null);
+    assert.strictEqual(listener._xyToHex(0.3, 0, 1), null);
 });
 
 // --- v1 fallback poll mapping ---
@@ -301,4 +334,11 @@ test('_mapV1GroupState: returns null for an empty/missing group', () => {
 test('_mapV1GroupState: action.on takes precedence over state.any_on when both present', () => {
     const state = listener._mapV1GroupState({ action: { on: false }, state: { any_on: true } });
     assert.deepStrictEqual(state, { power: 'OFF' });
+});
+
+test('_mapV1GroupState: action.xy is converted to a #rrggbb hex color field', () => {
+    const state = listener._mapV1GroupState({ action: { on: true, bri: 254, xy: [0.3, 0.3] } });
+    assert.strictEqual(state.power, 'ON');
+    assert.strictEqual(state.brightness, 100);
+    assert.match(state.color, /^#[0-9a-f]{6}$/);
 });

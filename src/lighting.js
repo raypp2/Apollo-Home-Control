@@ -59,7 +59,7 @@ const lights_new = lights;
 const lighting_scenes = lightingScenes;
 
 
-function lighting_device_command (operation_num, device, lighting_command) {
+function lighting_device_command (operation_num, device, lighting_command, param1) {
   for(var i = 0; i < lights_new.length; i++) {
     if(lights_new[i].id.toUpperCase() == device.toUpperCase()) {
       switch(lights_new[i].type) {
@@ -74,8 +74,13 @@ function lighting_device_command (operation_num, device, lighting_command) {
           }
           break;
         case 'hue-group':
-          console.log("%d - Turning Philips Hue group #%s to %s",operation_num, lights_new[i].address, lighting_command);
-          hue_group_command(operation_num, lights_new[i].address, lighting_command);
+          if (lighting_command.toUpperCase() === 'COLOR') {
+            console.log("%d - Setting Philips Hue group #%s color to #%s", operation_num, lights_new[i].address, param1);
+            hue_group_command(operation_num, lights_new[i].address, 'COLOR', param1);
+          } else {
+            console.log("%d - Turning Philips Hue group #%s to %s",operation_num, lights_new[i].address, lighting_command);
+            hue_group_command(operation_num, lights_new[i].address, lighting_command);
+          }
           break;
         case 'dmxFixture':
           console.log("%d - Setting DMX Fixture: %s", operation_num, lights_new[i].fixture); 
@@ -152,6 +157,12 @@ function scene_command (operation_num, sceneID, lighting_command) {
         console.log("%d - Setting DMX scene %s to command %s",operation_num, sceneDMX, lighting_command);
         dmx_scene_command(operation_num, sceneDMX, lighting_command);
       }
+
+      // Record activation for the dashboard's scene shadow state (retained
+      // apollo/home/scene/<id>/state + fingerprint learning). Lazy require to
+      // avoid load-order coupling; safe no-op in dry-run / broker-down.
+      try { require('./sceneShadow').onSceneActivated(lighting_scenes[i].id, lighting_command); }
+      catch (e) { console.log("%d - sceneShadow scene record skipped: %s", operation_num, e && e.message); }
     }
   }
 }

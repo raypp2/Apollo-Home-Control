@@ -1,10 +1,14 @@
 // Apollo v2 dashboard -- one light row in the room command panel (kind
-// 'dim' or 'switch', see commands.kindOf). Dim rows get pointer drag-to-set
-// plus a 50% quick-set button; switch rows are tap-only.
+// 'dim', 'switch', or 'color', see commands.kindOf). Dim rows get pointer
+// drag-to-set plus a 50% quick-set button; switch rows are tap-only. Color
+// rows behave exactly like a dim row plus a '>' drill-in that reveals a
+// ColorSwatches picker beneath the row.
 
+import { useState } from 'preact/hooks';
 import { commands } from '../state/index.js';
 import { useDragGesture } from './useDragGesture.js';
 import { colorToRgba } from './colorTint.js';
+import ColorSwatches from './ColorSwatches.jsx';
 
 const ROW_HEIGHT = 46;
 
@@ -17,10 +21,14 @@ const AMBER = 'var(--amber, #f2a65e)';
 
 function DeviceRow({ entry }) {
   const view = commands.deviceView(entry);
-  const isDim = view.kind === 'dim';
+  const isColor = view.kind === 'color';
+  // Color-capable lights ride the same drag/fill/toggle path as plain dim
+  // lights; the swatch picker is an additional drill-in below the row.
+  const isDim = view.kind === 'dim' || isColor;
+  const [swatchesOpen, setSwatchesOpen] = useState(false);
 
   // Hook is called unconditionally (rules of hooks); only wired to the DOM
-  // for dim rows -- switch rows are tap-only via a plain onClick below.
+  // for dim/color rows -- switch rows are tap-only via a plain onClick below.
   const gesture = useDragGesture({
     startValue: view.level,
     commitMode: view.commit,
@@ -112,7 +120,7 @@ function DeviceRow({ entry }) {
               color: 'rgba(234, 229, 239, 0.4)',
             }}
           >
-            {isDim ? 'dimmer' : 'switch'}
+            {isColor ? 'color' : isDim ? 'dimmer' : 'switch'}
           </span>
         </div>
         <span
@@ -133,33 +141,66 @@ function DeviceRow({ entry }) {
   if (!isDim) return row;
 
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
-      {row}
-      <button
-        type="button"
-        onClick={(event) => {
-          // The row itself never sees this click (separate DOM element), but
-          // stopPropagation is cheap insurance against any future wrapper
-          // that adds its own click/toggle handler around this pair.
-          event.stopPropagation();
-          commands.commitLevel(entry, 50);
-        }}
-        style={{
-          width: 44,
-          height: ROW_HEIGHT,
-          flexShrink: 0,
-          borderRadius: 'var(--r-row, 11px)',
-          border: ROW_BORDER,
-          background: ROW_BG,
-          color: 'var(--text-secondary, rgba(234, 229, 239, 0.55))',
-          fontFamily: FONT,
-          fontWeight: 500,
-          fontSize: 11.5,
-          cursor: 'pointer',
-        }}
-      >
-        50%
-      </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+        {row}
+        <button
+          type="button"
+          onClick={(event) => {
+            // The row itself never sees this click (separate DOM element), but
+            // stopPropagation is cheap insurance against any future wrapper
+            // that adds its own click/toggle handler around this pair.
+            event.stopPropagation();
+            commands.commitLevel(entry, 50);
+          }}
+          style={{
+            width: 44,
+            height: ROW_HEIGHT,
+            flexShrink: 0,
+            borderRadius: 'var(--r-row, 11px)',
+            border: ROW_BORDER,
+            background: ROW_BG,
+            color: 'var(--text-secondary, rgba(234, 229, 239, 0.55))',
+            fontFamily: FONT,
+            fontWeight: 500,
+            fontSize: 11.5,
+            cursor: 'pointer',
+          }}
+        >
+          50%
+        </button>
+        {isColor && (
+          <button
+            type="button"
+            aria-expanded={swatchesOpen}
+            aria-label={swatchesOpen ? 'Hide color swatches' : 'Show color swatches'}
+            onClick={(event) => {
+              event.stopPropagation();
+              setSwatchesOpen((open) => !open);
+            }}
+            style={{
+              width: 32,
+              height: ROW_HEIGHT,
+              flexShrink: 0,
+              borderRadius: 'var(--r-row, 11px)',
+              border: ROW_BORDER,
+              background: ROW_BG,
+              color: 'var(--text-secondary, rgba(234, 229, 239, 0.55))',
+              fontFamily: FONT,
+              fontWeight: 500,
+              fontSize: 14,
+              cursor: 'pointer',
+              transform: swatchesOpen ? 'rotate(90deg)' : 'none',
+              transition: 'transform 150ms var(--ease-turn, ease)',
+            }}
+          >
+            &rsaquo;
+          </button>
+        )}
+      </div>
+      {isColor && swatchesOpen && (
+        <ColorSwatches entry={entry} color={view.color} />
+      )}
     </div>
   );
 }

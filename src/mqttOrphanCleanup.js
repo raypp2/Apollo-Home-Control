@@ -73,6 +73,17 @@
 const STATE_TOPIC_FILTER = 'apollo/+/+/+/state';
 const DEFAULT_COLLECTION_WINDOW_MS = 1500;
 
+// Reserved app-published state topics that match STATE_TOPIC_FILTER but do NOT
+// correspond to any lights.json/devices.json entry, so they must never be
+// treated as orphans: scene/macro shadow state (src/sceneShadow.js) and
+// Spotify now-playing (src/spotify.js). Without this guard the cleanup would
+// wipe them on every restart.
+const RESERVED_STATE_PREFIXES = ['apollo/home/scene/', 'apollo/home/macro/', 'apollo/home/spotify/'];
+
+function isReservedStateTopic(topic) {
+    return RESERVED_STATE_PREFIXES.some((prefix) => topic.startsWith(prefix));
+}
+
 let doSubscribe;
 let doPublish;
 let doTopicFor;
@@ -217,7 +228,7 @@ function cleanupOrphanedStateTopics() {
         setTimeout(() => {
             let prunedCount = 0;
             for (const topic of collectedRetainedTopics) {
-                if (!knownGoodTopics.has(topic)) {
+                if (!knownGoodTopics.has(topic) && !isReservedStateTopic(topic)) {
                     pruneTopic(topic);
                     prunedCount++;
                 }

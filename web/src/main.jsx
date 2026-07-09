@@ -4,6 +4,7 @@ import { bootstrap, store, ui } from './state/index.js';
 import { Plane } from './plan/index.js';
 import RoomPanel from './panel/index.js';
 import StatusStrip from './status/index.js';
+import { SceneBar, RoomSceneBar } from './scenes/index.js';
 import './app.css';
 
 // Increment 2: the state layer (increment 1) feeds three surfaces -- the
@@ -60,15 +61,15 @@ function App() {
           <span class="wordmark">APOLLO</span>
           <span class="topbar-time">{formatTime(now)}</span>
         </div>
-        {/* TODO(increment 3): scene pills + macro buttons live here. */}
-        <span class="topbar-conn">
+        <div class="topbar-right">
+          <SceneBar />
           <span
             class="conn-dot"
             aria-hidden="true"
+            title={connectionState}
             style={{ background: CONNECTION_COLOR[connectionState] || CONNECTION_COLOR.offline }}
           />
-          {connectionState}
-        </span>
+        </div>
       </header>
 
       <div class="stage">
@@ -76,6 +77,7 @@ function App() {
           <Plane />
         </div>
         <div class="panel-wrap">
+          <RoomSceneBar />
           <RoomPanel />
         </div>
       </div>

@@ -1,0 +1,138 @@
+/* Apollo v2 dashboard -- scene/macro bar (increment 3).
+   SceneBar (top-bar-right cluster), MoreMenu (consolidated overflow), and
+   RoomSceneBar (room-scoped pill) share the .scene-pill / .macro-btn control
+   classes so the three surfaces render identically for the same entry. */
+
+.scene-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The horizontally-scrolling piece is this inner wrapper, not .scene-bar
+   itself -- keeping the "..." trigger (and the popover it opens) outside the
+   scrolling box means the popover is never clipped. Per the CSS overflow
+   spec, setting overflow-x to a scrolling value forces overflow-y to compute
+   to 'auto' too if left at 'visible', which would otherwise clip MoreMenu's
+   absolutely-positioned dropdown. */
+.scene-bar-scroll {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+  scrollbar-width: none;
+}
+
+.scene-bar-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.room-scene-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.scene-pill,
+.macro-btn {
+  flex: none;
+  appearance: none;
+  cursor: pointer;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 12.5px;
+  white-space: nowrap;
+  padding: 8px 18px;
+  transition: background 0.15s var(--ease-turn, ease), border-color 0.15s var(--ease-turn, ease);
+}
+
+.scene-pill {
+  border-radius: var(--r-pill, 999px);
+  border: 1px solid rgba(234, 229, 239, 0.14);
+  background: rgba(234, 229, 239, 0.03);
+  color: var(--text, #eae5ef);
+}
+
+.scene-pill:hover {
+  background: rgba(166, 136, 232, 0.12);
+}
+
+.scene-pill.is-active {
+  border: 1px solid var(--accent, #a688e8);
+  background: var(--accent-fill, rgba(166, 136, 232, 0.16));
+}
+
+.macro-btn {
+  border-radius: 10px;
+  border: 1px dashed rgba(242, 166, 94, 0.45);
+  background: rgba(242, 166, 94, 0.04);
+  color: var(--amber-text, #f2c79a);
+}
+
+.macro-btn:hover {
+  background: rgba(242, 166, 94, 0.1);
+}
+
+.macro-btn.is-active {
+  border: 1px solid rgba(242, 166, 94, 0.9);
+  background: rgba(242, 166, 94, 0.16);
+}
+
+/* MoreMenu ------------------------------------------------------------- */
+
+.more-menu-wrap {
+  position: relative;
+  flex: none;
+}
+
+.more-trigger {
+  flex: none;
+  appearance: none;
+  cursor: pointer;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-pill, 999px);
+  border: 1px solid rgba(234, 229, 239, 0.14);
+  background: rgba(234, 229, 239, 0.03);
+  color: var(--text-secondary, rgba(234, 229, 239, 0.55));
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s var(--ease-turn, ease), border-color 0.15s var(--ease-turn, ease);
+}
+
+.more-trigger:hover,
+.more-trigger.is-open {
+  background: rgba(166, 136, 232, 0.12);
+  border-color: rgba(234, 229, 239, 0.24);
+}
+
+.more-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 190px;
+  padding: 10px;
+  border-radius: var(--r-sheet, 18px);
+  border: 1px solid var(--hairline, rgba(234, 229, 239, 0.1));
+  background: var(--bg-drill, #16131c);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.more-menu-item {
+  width: 100%;
+  text-align: left;
+}
