@@ -5,10 +5,16 @@
 // macros rendered as dashed-amber buttons -- plus the consolidated "..."
 // overflow (MoreMenu). See registry.js for the full tiering and the collision
 // rule (macro wins when a scene shares its title).
+//
+// Increment 6: the "allLights" slot no longer renders as a single toggle
+// pill -- On and Off are the two things actually reached for, so it renders
+// as a SplitChip (one chip, two explicit buttons) instead of guessing intent
+// from the ambient `active` flag.
 
-import { store } from '../state/index.js';
+import { store, commands } from '../state/index.js';
 import { DEFAULT_ENTRIES, resolveEntry } from './registry.js';
 import { SceneMacroButton } from './Button.jsx';
+import { SplitChip } from './SplitChip.jsx';
 import MoreMenu from './MoreMenu.jsx';
 import './scenes.css';
 
@@ -27,6 +33,17 @@ export default function SceneBar() {
           // Config entry not present in this deployment's scenes/macros
           // config -- skip gracefully rather than rendering a broken button.
           if (!entry) return null;
+          if (kind === 'scene' && id === 'allLights') {
+            return (
+              <SplitChip
+                key="allLights"
+                label={entry.title}
+                entry={entry}
+                onOn={() => commands.setScene(entry, true)}
+                onOff={() => commands.setScene(entry, false)}
+              />
+            );
+          }
           return <SceneMacroButton key={`${kind}:${id}`} kind={kind} entry={entry} />;
         })}
       </div>

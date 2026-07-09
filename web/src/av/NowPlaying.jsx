@@ -1,15 +1,16 @@
-// Apollo v2 dashboard -- AV increment 4: now-playing strip. Sits above the
-// AV cluster in the room panel, reading the single global `store.spotify`
-// signal (Apollo has one Spotify account/session, not one per room -- the
-// panel decides whether to render this at all based on the room's config).
+// Apollo v2 dashboard -- AV increment 5: compact now-playing strip, one row
+// in the pinned command-panel footer alongside ClimateCluster and AvCluster.
+// Reads the single global `store.spotify` signal (Apollo has one Spotify
+// account/session, not one per room -- the panel decides whether to render
+// this at all based on the room's config).
 
 import { useState } from 'preact/hooks';
 import { store, commands } from '../state/index.js';
 import './av.css';
 
 const FONT = "'Outfit', system-ui, sans-serif";
-const STRIP_HEIGHT = 72;
-const ART_SIZE = 44;
+const STRIP_HEIGHT = 56;
+const ART_SIZE = 36;
 
 function Equalizer() {
   return (
@@ -79,13 +80,13 @@ function NowPlaying({ spotifyEntry }) {
   return (
     <div
       style={{
-        height: STRIP_HEIGHT,
+        minHeight: STRIP_HEIGHT,
         flexShrink: 0,
+        paddingTop: 10,
         borderTop: '1px solid var(--hairline, rgba(234, 229, 239, 0.1))',
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
-        padding: '0 2px',
+        gap: 10,
       }}
     >
       {nothingPlaying ? (

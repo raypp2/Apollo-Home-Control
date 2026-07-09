@@ -183,6 +183,13 @@ export function toggleScene(entry) {
   sendCommand(['LIGHTINGSCENES', entry.id, next ? 'on' : 'off']).catch(() => {});
 }
 
+/** Explicitly set a scene on or off (for split On/Off chips like All Lights). */
+export function setScene(entry, on) {
+  store.updateScene(store.scenes, entry.id, (e) => ({ ...e, active: on }));
+  setLastAction(`${entry.title} ${on ? 'on' : 'off'}`);
+  sendCommand(['LIGHTINGSCENES', entry.id, on ? 'on' : 'off']).catch(() => {});
+}
+
 /** Toggle a macro on/off. */
 export function toggleMacro(entry) {
   const next = !entry.active;
@@ -273,8 +280,79 @@ export function spotifyPlayPause(entry, isPlaying) {
   sendCommand(['DEVICES', entry.id, isPlaying ? 'pause' : 'play']).catch(() => {});
 }
 
+// --- room on/off toggle + group dim --------------------------------------
+// The room button (Living Room, Office, ...) is a scene-toggle plus a group
+// dimmer: state = any controllable light in the room is on; tap toggles (on ->
+// all off, off -> fire the room's lighting scene); hold+drag dims every
+// dimmable light in the room together. Rooms with a dedicated lighting scene
+// use it for the "on" look; others just switch their lights on.
+const ROOM_SCENE = { living: 'livingRoom', office: 'office' };
+
+/** Controllable lights in a room (dim/switch/color; excludes shade/other). */
+export function roomLights(roomId) {
+  return store.devicesInRoom(roomId).filter((e) => {
+    const k = kindOf(e);
+    return k === 'dim' || k === 'switch' || k === 'color';
+  });
+}
+
+/** True if any controllable light in the room is on. */
+export function roomAnyOn(roomId) {
+  return roomLights(roomId).some((e) => isOn(e));
+}
+
+/** Representative room level (max brightness of on dimmable lights, else 0). */
+export function roomLevel(roomId) {
+  let max = 0;
+  for (const e of roomLights(roomId)) {
+    if (isOn(e) && (kindOf(e) === 'dim' || kindOf(e) === 'color')) {
+      max = Math.max(max, levelOf(e));
+    }
+  }
+  return max;
+}
+
+/** Tap the room button: on -> everything off; off -> the room's scene/all-on. */
+export function roomToggle(roomId) {
+  if (roomAnyOn(roomId)) {
+    for (const e of roomLights(roomId)) {
+      if (isOn(e)) toggle(e);
+    }
+    setLastAction(`${roomId} off`);
+  } else {
+    const sceneId = ROOM_SCENE[roomId];
+    if (sceneId && store.scenes.value.get(sceneId)) {
+      const scene = store.scenes.value.get(sceneId);
+      store.updateScene(store.scenes, sceneId, (s) => ({ ...s, active: true }));
+      sendCommand(['LIGHTINGSCENES', sceneId, 'on']).catch(() => {});
+      setLastAction(`${scene.title} on`);
+    } else {
+      for (const e of roomLights(roomId)) {
+        if (!isOn(e)) toggle(e);
+      }
+      setLastAction(`${roomId} on`);
+    }
+  }
+}
+
+/** Hold+drag the room button: set every dimmable light in the room to `val`. */
+export function roomDim(roomId, val, { commit = false } = {}) {
+  const v = clamp(val);
+  for (const e of roomLights(roomId)) {
+    if (kindOf(e) === 'dim' || kindOf(e) === 'color') {
+      if (commit) commitLevel(e, v);
+      else previewLevel(e, v);
+    } else if (commit) {
+      // switch: on above zero, off at zero
+      const wantOn = v > 0;
+      if (isOn(e) !== wantOn) toggle(e);
+    }
+  }
+  if (commit) setLastAction(`${roomId} → ${v}%`);
+}
+
 // --- utility rail (door buzzer, find-my ping) ----------------------------
-/** Buzz the door open (/api/LOCKS/door/<which>/unlock). */
+/** Buzz the door open (/api/LOCKS/door/<which>/unlock). `which` = front|apartment. */
 export function buzzDoor(entry, which = 'front') {
   setLastAction(`Door ${which}`);
   sendCommand(['LOCKS', entry.id, which, 'unlock']).catch(() => {});

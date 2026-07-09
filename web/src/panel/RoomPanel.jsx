@@ -1,12 +1,12 @@
-// Apollo v2 dashboard -- Room Command Panel (increment 2, extended in
-// increment 3).
+// Apollo v2 dashboard -- Room Command Panel.
 //
-// Right column: shows a hint when no room is selected, otherwise the
-// selected room's dimmable/switch/color/shade devices as a vertical list of
-// rows. The 6 DMX fixture lights ('dmxFixture' type) are pulled out of that
-// list and consolidated into a single AccentRow + its drill-in (increment 3).
-// AV/climate/etc ('other' kind) are out of scope until increment 4 -- see
-// commands.kindOf.
+// Right column: a room on/off+dim toggle and the room's device rows in a
+// scrollable area, with the AV/climate/now-playing cluster PINNED to the
+// bottom so it stays visible while the device list scrolls above it. The 6 DMX
+// fixture lights are consolidated into a single AccentRow + drill-in.
+//
+// The AV zone (living + kitchen + office) is one open-plan space with no walls,
+// so the shared AC/Anthem/Spotify/projector controls appear for all three.
 
 import { useEffect, useState } from 'preact/hooks';
 import { store, ui, commands } from '../state/index.js';
@@ -14,25 +14,42 @@ import DeviceRow from './DeviceRow.jsx';
 import ShadeRow from './ShadeRow.jsx';
 import AccentRow from './AccentRow.jsx';
 import AccentDrillIn from './AccentDrillIn.jsx';
-import LinkChip from './LinkChip.jsx';
 import ClimateCluster from '../climate/index.js';
 import { AvCluster, NowPlaying } from '../av/index.js';
+import { RoomToggle } from '../scenes/index.js';
 
 const PANEL_KINDS = new Set(['dim', 'switch', 'color', 'shade']);
 const FONT = "'Outfit', system-ui, sans-serif";
+// Open-plan zone that shares the living room's AV + climate hardware.
+const AV_ZONE = new Set(['living', 'kitchen', 'office']);
 
-// Fills its wrapper (.panel-wrap owns width/height/border/radius, which differ
-// desktop vs. the phone bottom-sheet). RoomPanel just paints + scrolls inside.
 const PANEL_STYLE = {
   position: 'relative',
   width: '100%',
   height: '100%',
   boxSizing: 'border-box',
   background: 'var(--bg-panel, rgba(20, 17, 26, 0.7))',
-  padding: '24px 26px',
   display: 'flex',
   flexDirection: 'column',
+  overflow: 'hidden',
+};
+
+const SCROLL_STYLE = {
+  flex: 1,
+  minHeight: 0,
   overflowY: 'auto',
+  padding: '24px 26px',
+};
+
+const FOOTER_STYLE = {
+  flexShrink: 0,
+  borderTop: '1px solid var(--hairline, rgba(234, 229, 239, 0.1))',
+  padding: '12px 26px 14px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12,
+  background: 'var(--bg-panel, rgba(20, 17, 26, 0.7))',
+  boxShadow: '0 -8px 20px rgba(0, 0, 0, 0.25)',
 };
 
 /** "KITCHEN" -> "Kitchen"; used only for display, ids stay as-is. */
@@ -83,69 +100,69 @@ function RoomPanel() {
     .filter((entry) => entry.type !== 'dmxFixture')
     .filter((entry) => PANEL_KINDS.has(commands.kindOf(entry)));
 
-  // Bottom cluster (increment 4): climate / AV receiver / now-playing, each
-  // shown only when the room actually has that device (so it appears only for
-  // the living room, where the AC/Anthem/Spotify/projector live).
-  const acEntry = roomDevices.find((e) => e.isAC || (e.alexa && e.alexa.isAC));
-  const receiverEntry = roomDevices.find((e) => e.speaker); // Anthem has a speaker block
-  const projectorEntry = roomDevices.find((e) => e.type === 'ip_control' && !e.speaker);
-  const spotifyEntry = roomDevices.find((e) => e.type === 'spotify');
+  // AV/climate cluster: shared across the open-plan AV zone (living/kitchen/
+  // office). The AC/Anthem/Spotify/projector are all configured under the
+  // living room, so we find them across every device, not just this room's.
+  const inAvZone = AV_ZONE.has(selectedRoom);
+  const allDevices = inAvZone ? [...store.devices.value.values()] : [];
+  const acEntry = allDevices.find((e) => e.isAC || (e.alexa && e.alexa.isAC)) || null;
+  const receiverEntry = allDevices.find((e) => e.speaker) || null; // Anthem has a speaker block
+  const projectorEntry = allDevices.find((e) => e.type === 'ip_control' && !e.speaker) || null;
+  const spotifyEntry = allDevices.find((e) => e.type === 'spotify') || null;
   const inputScenes = store.deviceScenes.value.map((s) => ({ id: s.id, label: s.title }));
-  const links = room && Array.isArray(room.links) ? room.links : [];
+  const hasFooter = acEntry || receiverEntry || spotifyEntry;
 
   return (
     <div style={PANEL_STYLE}>
-      <div
-        style={{
-          fontFamily: FONT,
-          fontWeight: 600,
-          fontSize: 26,
-          marginBottom: 18,
-          flexShrink: 0,
-        }}
-      >
-        {label}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        {entries.map((entry) => {
-          const kind = commands.kindOf(entry);
-          const key = entry.stateTopic || entry.id;
-          return kind === 'shade'
-            ? <ShadeRow key={key} entry={entry} />
-            : <DeviceRow key={key} entry={entry} />;
-        })}
-        {accentEntries.length > 0 && (
-          <AccentRow
-            entries={accentEntries}
-            onShowControls={() => setAccentDrillInOpen(true)}
-          />
-        )}
-      </div>
-
-      <div
-        style={{
-          marginTop: 16,
-          flexShrink: 0,
-          fontFamily: FONT,
-          fontWeight: 300,
-          fontSize: 11,
-          color: 'rgba(234, 229, 239, 0.32)',
-        }}
-      >
-        tap to toggle · hold + drag to set a level
-      </div>
-
-      {links.length > 0 && (
-        <div style={{ marginTop: 16, flexShrink: 0, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {links.map((linkId) => (
-            <LinkChip key={linkId} id={linkId} />
-          ))}
+      <div style={SCROLL_STYLE}>
+        <div
+          style={{
+            fontFamily: FONT,
+            fontWeight: 600,
+            fontSize: 26,
+            marginBottom: 14,
+            flexShrink: 0,
+          }}
+        >
+          {label}
         </div>
-      )}
 
-      {(acEntry || receiverEntry || spotifyEntry) && (
-        <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 16, flexShrink: 0 }}>
+        <div style={{ marginBottom: 16 }}>
+          <RoomToggle roomId={selectedRoom} roomLabel={label} />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {entries.map((entry) => {
+            const kind = commands.kindOf(entry);
+            const key = entry.stateTopic || entry.id;
+            return kind === 'shade'
+              ? <ShadeRow key={key} entry={entry} />
+              : <DeviceRow key={key} entry={entry} />;
+          })}
+          {accentEntries.length > 0 && (
+            <AccentRow
+              entries={accentEntries}
+              onShowControls={() => setAccentDrillInOpen(true)}
+            />
+          )}
+        </div>
+
+        <div
+          style={{
+            marginTop: 16,
+            flexShrink: 0,
+            fontFamily: FONT,
+            fontWeight: 300,
+            fontSize: 11,
+            color: 'rgba(234, 229, 239, 0.32)',
+          }}
+        >
+          tap to toggle · hold + drag to set a level
+        </div>
+      </div>
+
+      {hasFooter && (
+        <div style={FOOTER_STYLE}>
           {acEntry && <ClimateCluster acEntry={acEntry} />}
           {receiverEntry && (
             <AvCluster

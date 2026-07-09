@@ -35,8 +35,11 @@ export function dbToPct(db) {
  * @param {boolean} props.disabled - dim + inert when the receiver is off
  * @param {(db:number)=>void} props.onChange - fires on tap and on every drag
  *   move (position-based, so there's no separate preview/commit split).
+ * @param {boolean} [props.compact] - slim-footer variant: shorter bar, no
+ *   "Volume" label row -- the dB reading is overlaid on the bar itself.
+ *   Used by AvCluster's pinned strip; AvDrillIn keeps the full variant.
  */
-function VolumeBar({ db, disabled, onChange }) {
+function VolumeBar({ db, disabled, onChange, compact = false }) {
   const trackRef = useRef(null);
   const dragRef = useRef(null); // { lastSend } while a drag is in progress
   // Local display value while dragging, so the fill tracks the finger at full
@@ -82,39 +85,42 @@ function VolumeBar({ db, disabled, onChange }) {
 
   const displayDb = dragDb !== null ? dragDb : db;
   const pct = dbToPct(displayDb);
+  const barHeight = compact ? 24 : BAR_HEIGHT;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <span
+    <div style={{ display: 'flex', flexDirection: 'column', gap: compact ? 0 : 4 }}>
+      {!compact && (
+        <div
           style={{
-            fontFamily: FONT,
-            fontWeight: 500,
-            fontSize: 11,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            color: 'var(--text-tertiary, rgba(234, 229, 239, 0.32))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
           }}
         >
-          Volume
-        </span>
-        <span
-          style={{
-            fontFamily: FONT,
-            fontWeight: 600,
-            fontSize: 12,
-            color: 'var(--text, #eae5ef)',
-          }}
-        >
-          {Math.round(displayDb)} dB
-        </span>
-      </div>
+          <span
+            style={{
+              fontFamily: FONT,
+              fontWeight: 500,
+              fontSize: 11,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: 'var(--text-tertiary, rgba(234, 229, 239, 0.32))',
+            }}
+          >
+            Volume
+          </span>
+          <span
+            style={{
+              fontFamily: FONT,
+              fontWeight: 600,
+              fontSize: 12,
+              color: 'var(--text, #eae5ef)',
+            }}
+          >
+            {Math.round(displayDb)} dB
+          </span>
+        </div>
+      )}
       <div
         ref={trackRef}
         onPointerDown={onPointerDown}
@@ -123,7 +129,7 @@ function VolumeBar({ db, disabled, onChange }) {
         onPointerCancel={endDrag}
         style={{
           position: 'relative',
-          height: BAR_HEIGHT,
+          height: barHeight,
           borderRadius: 'var(--r-row, 11px)',
           border: '1px solid rgba(234, 229, 239, 0.11)',
           background: 'rgba(234, 229, 239, 0.03)',
@@ -145,6 +151,26 @@ function VolumeBar({ db, disabled, onChange }) {
             pointerEvents: 'none',
           }}
         />
+        {compact && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              paddingRight: 10,
+              fontFamily: FONT,
+              fontWeight: 600,
+              fontSize: 11,
+              color: 'var(--text, #eae5ef)',
+              pointerEvents: 'none',
+            }}
+          >
+            {Math.round(displayDb)} dB
+          </span>
+        )}
       </div>
     </div>
   );

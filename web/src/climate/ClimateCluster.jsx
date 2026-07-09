@@ -1,8 +1,10 @@
-// Apollo v2 dashboard -- CLIMATE cluster (increment 4): the bottom-of-panel
-// row for the living room AC. `livingRoomAC` is a one-way IR blaster with no
-// readback, so everything rendered here is Apollo's assumed shadow state, not
-// a live sensor reading -- see ClimateDrillIn.jsx for the honest explanation
-// and the manual override/recalibration form.
+// Apollo v2 dashboard -- CLIMATE cluster (increment 5): slim row in the
+// pinned command-panel footer for the living room AC. `livingRoomAC` is a
+// one-way IR blaster with no readback, so everything rendered here is
+// Apollo's assumed shadow state, not a live sensor reading -- the honest
+// "assumed / no readback" explanation lives in ClimateDrillIn.jsx (behind
+// "All controls ›") along with mode/fan and the manual override form, so the
+// slim strip itself stays down to one compact control row.
 
 import { useState } from 'preact/hooks';
 import { commands } from '../state/index.js';
@@ -28,12 +30,11 @@ function ClimateCluster({ acEntry }) {
   return (
     <div
       style={{
-        marginTop: 14,
-        paddingTop: 14,
+        paddingTop: 10,
         borderTop: '1px solid var(--hairline, rgba(234, 229, 239, 0.1))',
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
+        gap: 8,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -125,17 +126,6 @@ function ClimateCluster({ acEntry }) {
         >
           {mode}
         </span>
-      </div>
-
-      <div
-        style={{
-          fontFamily: FONT,
-          fontWeight: 300,
-          fontSize: 10,
-          color: 'rgba(234, 229, 239, 0.32)',
-        }}
-      >
-        assumed -- no sensor readback
       </div>
 
       {drillInOpen && (

@@ -1,12 +1,21 @@
-// Apollo v2 dashboard -- AV increment 4: the bottom-of-panel AV block. One
-// row for the receiver (power, input, volume, mute) and one for the
-// projector. The full/raw receiver surface lives behind "All controls ›"
-// in AvDrillIn.jsx -- this cluster only exposes the inputs that map to a
-// full DEVICESCENES device scene (input + video routing + keypad blink),
-// not the receiver's raw input commands.
+// Apollo v2 dashboard -- AV increment 5: the pinned-footer AV block. Slim by
+// default (one compact strip), expanding into the full raw/diagnostics
+// surface behind "All controls ›" (AvDrillIn, increment 4) which this
+// component now owns and opens itself -- see the note on `drillInOpen` below.
+//
+// Slim states:
+//   - receiver OFF: just a source picker (device-scene INPUT buttons). Firing
+//     one powers the receiver on *and* selects, via avInputScene.
+//   - receiver ON: Off button + volume bar + mute, plus a compact source chip
+//     that expands into the same INPUT picker in place (no drill-in needed
+//     for the common "switch source" action).
+// The projector control lives only in AvDrillIn now -- it's a less-common
+// action than anything above, so it doesn't cost slim-footer space here.
 
+import { useState } from 'preact/hooks';
 import { commands } from '../state/index.js';
 import VolumeBar from './VolumeBar.jsx';
+import AvDrillIn from './AvDrillIn.jsx';
 
 const FONT = "'Outfit', system-ui, sans-serif";
 const ROW_BORDER = '1px solid rgba(234, 229, 239, 0.11)';
@@ -19,6 +28,14 @@ const INPUT_NUMBER_TO_SCENE_ID = {
   1: 'appleTv',
   4: 'chromeCast',
   5: 'spotifyServerLivingRoom',
+};
+
+// Receiver input number -> display label, for the slim "current source" chip.
+const INPUT_NUMBER_TO_LABEL = {
+  1: 'Apple TV',
+  4: 'Chromecast',
+  5: 'Spotify',
+  6: 'Input 6',
 };
 
 function Pill({ on, onClick, children }) {
@@ -37,6 +54,7 @@ function Pill({ on, onClick, children }) {
         fontSize: 11.5,
         cursor: 'pointer',
         whiteSpace: 'nowrap',
+        flexShrink: 0,
       }}
     >
       {children}
@@ -61,130 +79,156 @@ function SectionLabel({ children }) {
   );
 }
 
+function AllControlsLink({ onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        color: 'var(--accent, #a688e8)',
+        fontFamily: FONT,
+        fontWeight: 500,
+        fontSize: 11,
+        cursor: 'pointer',
+        padding: 0,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      All controls &rsaquo;
+    </button>
+  );
+}
+
+/** The INPUT device-scene picker -- fires a full device scene (input + video
+ * routing + keypad blink), not the receiver's raw input command. Shared by
+ * the OFF slim state and the ON state's expanded source chip. */
+function SourcePicker({ inputScenes, activeSceneId }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {inputScenes.map((scene) => {
+        const active = scene.id === activeSceneId;
+        return (
+          <button
+            key={scene.id}
+            type="button"
+            onClick={() => commands.avInputScene(scene.id, scene.label)}
+            style={{
+              padding: '7px 13px',
+              borderRadius: 'var(--r-row, 11px)',
+              border: active ? '1px solid var(--accent, #a688e8)' : ROW_BORDER,
+              background: active ? 'var(--accent-fill, rgba(166, 136, 232, 0.16))' : ROW_BG,
+              color: active ? 'var(--text, #eae5ef)' : 'var(--text-secondary, rgba(234, 229, 239, 0.55))',
+              fontFamily: FONT,
+              fontWeight: 500,
+              fontSize: 12,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {scene.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * @param {object} props
  * @param {object} props.receiverEntry - the Anthem receiver DEVICES entry
- * @param {object} props.projectorEntry - the projector DEVICES entry
+ * @param {object} props.projectorEntry - the projector DEVICES entry (now
+ *   only surfaced inside AvDrillIn, not the slim cluster)
  * @param {Array<{id:string,label:string}>} props.inputScenes - device scenes
- *   for the INPUT segmented buttons, e.g. Apple TV / Chromecast / Spotify
- * @param {() => void} props.onShowControls - opens AvDrillIn
+ *   for the INPUT buttons, e.g. Apple TV / Chromecast / Spotify
  */
-function AvCluster({ receiverEntry, projectorEntry, inputScenes, onShowControls }) {
+function AvCluster({ receiverEntry, projectorEntry, inputScenes }) {
+  // Self-contained drill-in state: this component owns opening/closing its
+  // own AvDrillIn rather than expecting a parent-supplied onShowControls --
+  // the parent (RoomPanel) never wired that up, so "All controls ›" was
+  // previously a dead button. Same pattern ClimateCluster already uses.
+  const [drillInOpen, setDrillInOpen] = useState(false);
+  // Slim ON state keeps the source picker collapsed behind a chip until
+  // tapped, so switching source doesn't cost permanent footer height.
+  const [sourceOpen, setSourceOpen] = useState(false);
+
   const live = (receiverEntry && receiverEntry.live) || {};
   const receiverOn = live.power === 'ON';
   const activeSceneId = INPUT_NUMBER_TO_SCENE_ID[live.input];
-
-  const projectorOn = commands.deviceView(projectorEntry).on;
+  const activeLabel = INPUT_NUMBER_TO_LABEL[live.input] || 'Unknown source';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* AV RECEIVER row */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <SectionLabel>AV Receiver</SectionLabel>
-          <button
-            type="button"
-            onClick={onShowControls}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--accent, #a688e8)',
-              fontFamily: FONT,
-              fontWeight: 500,
-              fontSize: 11,
-              cursor: 'pointer',
-              padding: 0,
-            }}
-          >
-            All controls &rsaquo;
-          </button>
-          <div style={{ flex: 1 }} />
+    <div
+      style={{
+        paddingTop: 10,
+        borderTop: '1px solid var(--hairline, rgba(234, 229, 239, 0.1))',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <SectionLabel>Receiver</SectionLabel>
+        <AllControlsLink onClick={() => setDrillInOpen(true)} />
+        <div style={{ flex: 1 }} />
+        {receiverOn && (
           <Pill on={Boolean(live.mute)} onClick={() => commands.avMute(receiverEntry)}>
             {live.mute ? 'Muted' : 'Mute'}
           </Pill>
-          <Pill on={receiverOn} onClick={() => commands.avPower(receiverEntry, !receiverOn)}>
-            {receiverOn ? 'On' : 'Off'}
-          </Pill>
-        </div>
+        )}
+      </div>
 
-        {/* INPUT segmented buttons -- always enabled; firing a device scene
-            both selects the source and powers the receiver on server-side. */}
-        <div>
-          <div style={{ marginBottom: 6 }}>
-            <SectionLabel>Input</SectionLabel>
+      {!receiverOn ? (
+        // OFF: nothing but the source picker -- picking one powers on + selects.
+        <SourcePicker inputScenes={inputScenes} activeSceneId={activeSceneId} />
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Pill on={false} onClick={() => commands.avPower(receiverEntry, false)}>
+              Off
+            </Pill>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <VolumeBar
+                compact
+                db={typeof live.volume === 'number' ? live.volume : -80}
+                disabled={false}
+                onChange={(db) => commands.avVolume(receiverEntry, db)}
+              />
+            </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {inputScenes.map((scene) => {
-              const active = receiverOn && scene.id === activeSceneId;
-              return (
-                <button
-                  key={scene.id}
-                  type="button"
-                  onClick={() => commands.avInputScene(scene.id, scene.label)}
-                  style={{
-                    padding: '7px 13px',
-                    borderRadius: 'var(--r-row, 11px)',
-                    border: active
-                      ? '1px solid var(--accent, #a688e8)'
-                      : ROW_BORDER,
-                    background: active ? 'var(--accent-fill, rgba(166, 136, 232, 0.16))' : ROW_BG,
-                    color: active ? 'var(--text, #eae5ef)' : 'var(--text-secondary, rgba(234, 229, 239, 0.55))',
-                    fontFamily: FONT,
-                    fontWeight: 500,
-                    fontSize: 12,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {scene.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
 
-        <VolumeBar
-          db={typeof live.volume === 'number' ? live.volume : -80}
-          disabled={!receiverOn}
-          onChange={(db) => commands.avVolume(receiverEntry, db)}
+          <button
+            type="button"
+            onClick={() => setSourceOpen((o) => !o)}
+            style={{
+              alignSelf: 'flex-start',
+              padding: '6px 12px',
+              borderRadius: 'var(--r-pill, 999px)',
+              border: ROW_BORDER,
+              background: ROW_BG,
+              color: 'var(--text-secondary, rgba(234, 229, 239, 0.55))',
+              fontFamily: FONT,
+              fontWeight: 500,
+              fontSize: 12,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {activeLabel} {sourceOpen ? '▴' : '▾'}
+          </button>
+
+          {sourceOpen && <SourcePicker inputScenes={inputScenes} activeSceneId={activeSceneId} />}
+        </>
+      )}
+
+      {drillInOpen && (
+        <AvDrillIn
+          receiverEntry={receiverEntry}
+          projectorEntry={projectorEntry}
+          onBack={() => setDrillInOpen(false)}
         />
-      </div>
-
-      {/* PROJECTOR row */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 12px',
-          borderRadius: 'var(--r-row, 11px)',
-          border: ROW_BORDER,
-          background: ROW_BG,
-        }}
-      >
-        <span
-          style={{
-            fontFamily: FONT,
-            fontWeight: 500,
-            fontSize: 13.5,
-            color: 'var(--text, #eae5ef)',
-          }}
-        >
-          Projector
-        </span>
-        <Pill
-          on={projectorOn}
-          onClick={() =>
-            commands.momentary(
-              projectorEntry,
-              [projectorOn ? 'off' : 'on'],
-              `Projector ${projectorOn ? 'off' : 'on'}`,
-            )
-          }
-        >
-          {projectorOn ? 'On' : 'Off'}
-        </Pill>
-      </div>
+      )}
     </div>
   );
 }

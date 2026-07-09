@@ -1,6 +1,7 @@
-// Apollo v2 dashboard -- AV public surface (increment 4): NOW-PLAYING strip,
-// the AV cluster (receiver + projector), and the receiver's full drill-in.
-// The orchestrator (RoomPanel) owns wiring these into the room command panel.
+// Apollo v2 dashboard -- AV public surface (increment 5): NOW-PLAYING strip
+// and the slim/expandable AV cluster (receiver, with the drill-in -- and the
+// projector control inside it -- now self-contained). The orchestrator
+// (RoomPanel) owns wiring these into the pinned command-panel footer.
 
 import AvCluster from './AvCluster.jsx';
 

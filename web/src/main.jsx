@@ -4,8 +4,7 @@ import { bootstrap, store, ui } from './state/index.js';
 import { Plane } from './plan/index.js';
 import RoomPanel from './panel/index.js';
 import StatusStrip from './status/index.js';
-import { SceneBar, RoomSceneBar } from './scenes/index.js';
-import UtilityRail from './util/UtilityRail.jsx';
+import { SceneBar } from './scenes/index.js';
 import './app.css';
 
 // Increment 2: the state layer (increment 1) feeds three surfaces -- the
@@ -66,7 +65,6 @@ function App() {
           <SceneBar />
         </div>
         <div class="topbar-util">
-          <UtilityRail />
           <span
             class="conn-dot"
             aria-hidden="true"
@@ -81,7 +79,6 @@ function App() {
           <Plane />
         </div>
         <div class="panel-wrap">
-          <RoomSceneBar />
           <RoomPanel />
         </div>
       </div>

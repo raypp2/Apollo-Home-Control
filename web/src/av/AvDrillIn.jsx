@@ -1,8 +1,10 @@
-// Apollo v2 dashboard -- AV increment 4: the "All controls ›" drill-in behind
+// Apollo v2 dashboard -- AV increment 5: the "All controls ›" drill-in behind
 // AvCluster. Unlike the cluster's INPUT (which fires whole device scenes),
 // this exposes the receiver's raw input commands plus a real diagnostics
 // panel and the two query actions the Anthem module actually supports
 // (input_query, power_query) -- an honest debug view, not a prettified one.
+// The projector on/off toggle also lives here now (moved out of the slim
+// AvCluster in increment 5 -- it's a less-common action than source/volume).
 
 import { commands } from '../state/index.js';
 import { DrillInShell, SegmentedGroup } from '../panel/DrillInShell.jsx';
@@ -83,9 +85,11 @@ function CardLabel({ children }) {
 /**
  * @param {object} props
  * @param {object} props.receiverEntry - the Anthem receiver DEVICES entry
+ * @param {object} [props.projectorEntry] - the projector DEVICES entry;
+ *   the Projector row is omitted if not supplied
  * @param {() => void} props.onBack
  */
-function AvDrillIn({ receiverEntry, onBack }) {
+function AvDrillIn({ receiverEntry, projectorEntry, onBack }) {
   const live = (receiverEntry && receiverEntry.live) || {};
   const receiverOn = live.power === 'ON';
 
@@ -97,6 +101,7 @@ function AvDrillIn({ receiverEntry, onBack }) {
   }));
 
   const reachable = live.reachable !== false;
+  const projectorOn = projectorEntry ? commands.deviceView(projectorEntry).on : false;
 
   return (
     <DrillInShell title="AV Receiver" onBack={onBack}>
@@ -146,6 +151,28 @@ function AvDrillIn({ receiverEntry, onBack }) {
           {live.mute ? 'Muted' : 'Mute'}
         </button>
       </div>
+
+      {projectorEntry && (
+        <SegmentedGroup
+          label="Projector"
+          items={[
+            {
+              id: 'on',
+              title: 'On',
+              on: projectorOn,
+              onToggle: () =>
+                commands.momentary(projectorEntry, ['on'], 'Projector on'),
+            },
+            {
+              id: 'off',
+              title: 'Off',
+              on: !projectorOn,
+              onToggle: () =>
+                commands.momentary(projectorEntry, ['off'], 'Projector off'),
+            },
+          ]}
+        />
+      )}
 
       <div>
         <CardLabel>Diagnostics</CardLabel>
