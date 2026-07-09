@@ -1,4 +1,6 @@
+import { useState } from 'preact/hooks';
 import { store, ui } from '../state/index.js';
+import StatusScreen from './StatusScreen.jsx';
 
 // Apollo v2 dashboard -- increment 2's status strip.
 //
@@ -126,13 +128,13 @@ function connectionSuffix(connectionState) {
   return '';
 }
 
-function openStatusScreen() {
-  // TODO(increment 5): open system status screen (plan §5.6 -- Bridges,
-  // Connection, Devices, Links). Until then this is a no-op stub.
-  console.log('[apollo] status screen: not yet implemented');
-}
-
 export default function StatusStrip() {
+  // Increment 5: the status screen's open/closed state lives here rather
+  // than in main.jsx (which renders <StatusStrip /> and isn't ours to
+  // touch) -- StatusScreen is rendered as a fixed-position overlay right
+  // alongside the strip's own markup whenever `open` is true.
+  const [open, setOpen] = useState(false);
+
   const health = computeHealth();
   const suffixText = connectionSuffix(store.connection.value);
   const traceText = ui.lastAction.value;
@@ -150,12 +152,13 @@ export default function StatusStrip() {
               : null),
           }}
         />
-        <button type="button" style={label} onClick={openStatusScreen}>
+        <button type="button" style={label} onClick={() => setOpen(true)}>
           {health.label}
           {suffixText && <span style={suffix}>{suffixText}</span>}
         </button>
       </div>
       {traceText && <div style={trace}>{traceText}</div>}
+      {open && <StatusScreen onClose={() => setOpen(false)} />}
     </div>
   );
 }

@@ -9,6 +9,7 @@
 
 import { store, ui } from '../state/index.js';
 import Room from './Room.jsx';
+import AcVent from './AcVent.jsx';
 import './plan.css';
 
 const PLANE_W = 470;
@@ -55,6 +56,7 @@ export default function Plane() {
           {rooms.map((room) => (
             <Room key={room.id} room={room} />
           ))}
+          <AcVent />
         </div>
       </div>
     </div>

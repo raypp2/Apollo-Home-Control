@@ -1,0 +1,51 @@
+/* Apollo v2 dashboard -- AC unit + airflow (Beacon v3 §5.2). Imported by
+   AcVent.jsx; kept separate from plan.css so the AC-specific rules and
+   keyframes stay together as their own unit. */
+
+.plan-ac-vent {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--ac-blue-border, rgba(140, 190, 255, 0.55));
+  background: rgba(110, 180, 255, 0.14);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.plan-ac-vent__grille {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 1px;
+  background: rgba(140, 190, 255, 0.35);
+}
+
+.plan-ac-vent__grille:nth-child(1) {
+  top: 4px;
+}
+
+.plan-ac-vent__grille:nth-child(2) {
+  top: 8px;
+}
+
+/* Fades each streamline out toward the room end (bottom of Airflow's 90x100
+   viewBox) so they read as dissipating air rather than hard-edged lines. */
+.plan-ac-airflow {
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 35%, rgba(0, 0, 0, 0) 92%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 35%, rgba(0, 0, 0, 0) 92%);
+}
+
+.plan-ac-airflow__stream {
+  animation-fill-mode: forwards;
+}
+
+/* `--flow-len` is set per-path in Airflow.jsx to that path's own dasharray
+   sum (dash + gap), so one animation cycle travels exactly one pattern
+   length and loops back to `from` with no visible seam. */
+@keyframes plan-ac-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: calc(-1 * var(--flow-len, 60px));
+  }
+}

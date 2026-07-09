@@ -14,6 +14,7 @@ import DeviceRow from './DeviceRow.jsx';
 import ShadeRow from './ShadeRow.jsx';
 import AccentRow from './AccentRow.jsx';
 import AccentDrillIn from './AccentDrillIn.jsx';
+import LinkChip from './LinkChip.jsx';
 import ClimateCluster from '../climate/index.js';
 import { AvCluster, NowPlaying } from '../av/index.js';
 
@@ -90,6 +91,7 @@ function RoomPanel() {
   const projectorEntry = roomDevices.find((e) => e.type === 'ip_control' && !e.speaker);
   const spotifyEntry = roomDevices.find((e) => e.type === 'spotify');
   const inputScenes = store.deviceScenes.value.map((s) => ({ id: s.id, label: s.title }));
+  const links = room && Array.isArray(room.links) ? room.links : [];
 
   return (
     <div style={PANEL_STYLE}>
@@ -133,6 +135,14 @@ function RoomPanel() {
       >
         tap to toggle · hold + drag to set a level
       </div>
+
+      {links.length > 0 && (
+        <div style={{ marginTop: 16, flexShrink: 0, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {links.map((linkId) => (
+            <LinkChip key={linkId} id={linkId} />
+          ))}
+        </div>
+      )}
 
       {(acEntry || receiverEntry || spotifyEntry) && (
         <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 16, flexShrink: 0 }}>

@@ -24,6 +24,12 @@ const mqttTopics = require('./mqttTopics');
 var express = require('express');
 var path = require('path');
 var app = express();
+// The new Preact dashboard (built into public/app, base '/') is served at the
+// root. Registered BEFORE the old public/ static so '/' resolves to the new
+// app's index.html; the old AngularJS assets (/js, /css, /font/roboto, /logs)
+// still fall through to public/ for the /legacy route. Non-file paths (/api,
+// /list) fall through both statics to their routes below.
+app.use(express.static('public/app'));
 app.use(express.static('public'));
 // const mDNS = require('bonjour')();
 
