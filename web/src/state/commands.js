@@ -190,3 +190,97 @@ export function toggleMacro(entry) {
   setLastAction(`${entry.title} ${next ? 'on' : 'off'}`);
   sendCommand(['MACROS', entry.id, next ? 'on' : 'off']).catch(() => {});
 }
+
+// --- momentary triggers (door, find-my, projector) -----------------------
+// Fire-and-forget; no optimistic state (there's nothing persistent to toggle).
+export function momentary(entry, segments, trace) {
+  setLastAction(trace);
+  sendCommand([entry.module || 'DEVICES', entry.id, ...segments]).catch(() => {});
+}
+
+function patchLive(entry, patch) {
+  store.updateDevice(entry.stateTopic, (e) => ({ ...e, live: { ...e.live, ...patch } }));
+}
+
+// --- climate (AC shadow) --------------------------------------------------
+// AC entry.live carries {power, mode:'COOL'|'ECO', setpoint:int, fan}. All
+// dispatch through the AC module → src/climateShadow.js.
+export function climatePower(entry, on) {
+  patchLive(entry, { power: on ? 'ON' : 'OFF' });
+  setLastAction(`AC ${on ? 'on' : 'off'}`);
+  sendCommand(['AC', entry.id, on ? 'on' : 'off']).catch(() => {});
+}
+export function climateSetpoint(entry, n) {
+  const v = Math.max(60, Math.min(80, Math.round(n)));
+  patchLive(entry, { setpoint: v });
+  setLastAction(`AC → ${v}°`);
+  sendCommand(['AC', entry.id, 'setpoint', String(v)]).catch(() => {});
+}
+export function climateMode(entry, mode) {
+  patchLive(entry, { mode });
+  setLastAction(`AC ${mode}`);
+  sendCommand(['AC', entry.id, 'mode', mode]).catch(() => {});
+}
+export function climateFan(entry, fan) {
+  patchLive(entry, { fan });
+  setLastAction(`AC fan ${fan}`);
+  sendCommand(['AC', entry.id, 'fan', fan]).catch(() => {});
+}
+/** Correct the shadow WITHOUT sending IR (drift recalibration). */
+export function climateOverride(entry, patch) {
+  patchLive(entry, patch);
+  setLastAction('AC override');
+  for (const [k, v] of Object.entries(patch)) {
+    sendCommand(['AC', entry.id, 'override_' + k, String(v)]).catch(() => {});
+  }
+}
+
+// --- AV receiver (Anthem) -------------------------------------------------
+// entry.live: {power, volume (negative dB int), input (number), mute}.
+export function avPower(entry, on) {
+  patchLive(entry, { power: on ? 'ON' : 'OFF' });
+  setLastAction(`Receiver ${on ? 'on' : 'off'}`);
+  sendCommand(['DEVICES', entry.id, on ? 'on' : 'off']).catch(() => {});
+}
+/** Set volume in dB (negative). Command sends the magnitude (Z1VOL-<n>). */
+export function avVolume(entry, db) {
+  const v = Math.round(db);
+  patchLive(entry, { volume: v });
+  setLastAction(`Receiver ${v} dB`);
+  sendCommand(['SPEAKERS', entry.id, 'setvolume', String(Math.abs(v))]).catch(() => {});
+}
+export function avMute(entry) {
+  const next = !(entry.live && entry.live.mute);
+  patchLive(entry, { mute: next });
+  setLastAction(`Receiver ${next ? 'muted' : 'unmuted'}`);
+  sendCommand(['DEVICES', entry.id, 'muteToggle']).catch(() => {});
+}
+/** Raw receiver input (drill-in / debug surface): Z1INP<n>. */
+export function avInputRaw(entry, inputCmd, label) {
+  patchLive(entry, { power: 'ON' });
+  setLastAction(`Receiver → ${label || inputCmd}`);
+  sendCommand(['DEVICES', entry.id, inputCmd]).catch(() => {});
+}
+/** Panel INPUT: fires the full device scene (input + video + keypad blink). */
+export function avInputScene(deviceSceneId, label) {
+  setLastAction(`Source → ${label || deviceSceneId}`);
+  sendCommand(['DEVICESCENES', deviceSceneId, 'on']).catch(() => {});
+}
+
+// --- Spotify now-playing transport ---------------------------------------
+export function spotifyPlayPause(entry, isPlaying) {
+  setLastAction(isPlaying ? 'Spotify pause' : 'Spotify play');
+  sendCommand(['DEVICES', entry.id, isPlaying ? 'pause' : 'play']).catch(() => {});
+}
+
+// --- utility rail (door buzzer, find-my ping) ----------------------------
+/** Buzz the door open (/api/LOCKS/door/<which>/unlock). */
+export function buzzDoor(entry, which = 'front') {
+  setLastAction(`Door ${which}`);
+  sendCommand(['LOCKS', entry.id, which, 'unlock']).catch(() => {});
+}
+/** Ping the phone via Find My iPhone. */
+export function pingPhone(entry) {
+  setLastAction('Ping iPhone');
+  sendCommand(['DEVICES', entry.id, 'on']).catch(() => {});
+}

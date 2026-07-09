@@ -312,9 +312,47 @@ function spotifyStopPlay(deviceName, debug_id) {
         });
 }
 
+/**
+ * Lightweight resume: calls play() with NO device_id, so playback resumes on
+ * whatever Spotify Connect device is currently active rather than
+ * re-transferring to the Echo (that's spotifySwitchPlay's job). Used by the
+ * now-playing card's play/pause toggle (`/api/DEVICES/lrEchoSpotify/play`),
+ * where playback is already on the intended device and just needs to
+ * continue.
+ * @param {number} debug_id
+ * @returns {Promise<void>|undefined} undefined in DRY_RUN
+ */
+function spotifyResume(debug_id) {
+
+    if (DRY_RUN) {
+        console.log("%d - DRY RUN, would resume Spotify playback", debug_id);
+        return;
+    }
+
+    spotifyApi.setAccessToken(process.env.spotifyRefreshToken);
+    spotifyApi.setCredentials({
+        'refreshToken': process.env.spotifyRefreshToken
+    });
+
+    return spotifyApi.refreshAccessToken()
+        .then(function(data) {
+            spotifyApi.setAccessToken(data.body['access_token']);
+            console.log("%d - Refreshed Spotify Auth Token", debug_id);
+
+            return spotifyApi.play();
+        })
+        .then(function() {
+            console.log("%d - Resumed Spotify playback", debug_id);
+        })
+        .catch(function(err) {
+            console.log('%d - Error resuming Spotify playback:', debug_id, err);
+        });
+}
+
 module.exports = {
 	spotifySwitchPlay,
     spotifyStopPlay,
+    spotifyResume,
     startNowPlayingPublisher,
     _buildNowPlayingPayload,
 }

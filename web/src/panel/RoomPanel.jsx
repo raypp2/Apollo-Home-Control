@@ -14,6 +14,8 @@ import DeviceRow from './DeviceRow.jsx';
 import ShadeRow from './ShadeRow.jsx';
 import AccentRow from './AccentRow.jsx';
 import AccentDrillIn from './AccentDrillIn.jsx';
+import ClimateCluster from '../climate/index.js';
+import { AvCluster, NowPlaying } from '../av/index.js';
 
 const PANEL_KINDS = new Set(['dim', 'switch', 'color', 'shade']);
 const FONT = "'Outfit', system-ui, sans-serif";
@@ -80,6 +82,15 @@ function RoomPanel() {
     .filter((entry) => entry.type !== 'dmxFixture')
     .filter((entry) => PANEL_KINDS.has(commands.kindOf(entry)));
 
+  // Bottom cluster (increment 4): climate / AV receiver / now-playing, each
+  // shown only when the room actually has that device (so it appears only for
+  // the living room, where the AC/Anthem/Spotify/projector live).
+  const acEntry = roomDevices.find((e) => e.isAC || (e.alexa && e.alexa.isAC));
+  const receiverEntry = roomDevices.find((e) => e.speaker); // Anthem has a speaker block
+  const projectorEntry = roomDevices.find((e) => e.type === 'ip_control' && !e.speaker);
+  const spotifyEntry = roomDevices.find((e) => e.type === 'spotify');
+  const inputScenes = store.deviceScenes.value.map((s) => ({ id: s.id, label: s.title }));
+
   return (
     <div style={PANEL_STYLE}>
       <div
@@ -122,6 +133,20 @@ function RoomPanel() {
       >
         tap to toggle · hold + drag to set a level
       </div>
+
+      {(acEntry || receiverEntry || spotifyEntry) && (
+        <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 16, flexShrink: 0 }}>
+          {acEntry && <ClimateCluster acEntry={acEntry} />}
+          {receiverEntry && (
+            <AvCluster
+              receiverEntry={receiverEntry}
+              projectorEntry={projectorEntry}
+              inputScenes={inputScenes}
+            />
+          )}
+          {spotifyEntry && <NowPlaying spotifyEntry={spotifyEntry} />}
+        </div>
+      )}
 
       {accentDrillInOpen && accentEntries.length > 0 && (
         <AccentDrillIn

@@ -42,6 +42,27 @@
  *              Rollback: set ITACH_PERSISTENT_CONNECTIONS=false to route back
  *              to the original per-command implementation, kept verbatim
  *              below as _legacy_send_ip_command.
+ *
+ * @description (Dashboard increment 4) Devices with a `speaker` block (the
+ *              Anthem receiver) get their volume/input/mute state folded into
+ *              the SAME power-query occasions (post-command check and the
+ *              periodic poller) via queryAnthemSpeakerExtras(). Each extra
+ *              query (Z1VOL?;/Z1INP?;/Z1MUT?;) is sent as its OWN
+ *              conn.send(..., {expectResponse:true}) call, awaited in
+ *              sequence, rather than concatenated into one write -- this
+ *              connection's framing terminator is a single `;` (see
+ *              deriveTerminator), and DeviceConnection's expectResponse
+ *              handling resolves on the FIRST terminator match and then stops
+ *              listening, so a batched write like `Z1VOL?;Z1INP?;Z1MUT?;`
+ *              would only ever capture the first field's response and
+ *              silently drop the rest. Sending one query per round trip
+ *              sidesteps that entirely. parseAnthemSpeakerState() is the pure
+ *              regex-based parser (exported for testing), tolerant of
+ *              whichever fields are present in whatever string it's given --
+ *              production feeds it one query's response at a time and merges
+ *              the partial results, but it also parses a single fully
+ *              concatenated buffer (e.g. `Z1POW1;Z1VOL-36;Z1INP5;Z1MUT0;`)
+ *              just as well, which is how it's unit-tested directly.
  */
 
 const { getConnection } = require('./deviceConnection');
@@ -153,6 +174,72 @@ function parsePowerResponse(device_info, response) {
 		return 'OFF';
 	}
 	return null;
+}
+
+/**
+ * Pure regex-based parser for an Anthem-style receiver's `;`-framed responses.
+ * Tolerant of whichever fields are present -- callers may feed it a single
+ * query's response (e.g. just `Z1VOL-36`) or a fully concatenated buffer
+ * (e.g. `Z1POW1;Z1VOL-36;Z1INP5;Z1MUT0;`); either way it extracts whatever it
+ * finds and omits the rest. Also tolerant of variable zero-padding on the
+ * input number (a query reply is `Z1INP5`, while the SET command uses
+ * `Z1INP05`) since `\d+` matches either.
+ * @param {string|null|undefined} response
+ * @returns {{power?: ("ON"|"OFF"), volume?: number, input?: number, mute?: boolean}}
+ */
+function parseAnthemSpeakerState(response) {
+	const state = {};
+	if (!response) {
+		return state;
+	}
+	const str = String(response);
+
+	const powerMatch = /Z1POW([01])/.exec(str);
+	if (powerMatch) {
+		state.power = powerMatch[1] === '1' ? 'ON' : 'OFF';
+	}
+	const volumeMatch = /Z1VOL(-?\d+)/.exec(str);
+	if (volumeMatch) {
+		state.volume = parseInt(volumeMatch[1], 10);
+	}
+	const inputMatch = /Z1INP(\d+)/.exec(str);
+	if (inputMatch) {
+		state.input = parseInt(inputMatch[1], 10);
+	}
+	const muteMatch = /Z1MUT([01])/.exec(str);
+	if (muteMatch) {
+		state.mute = muteMatch[1] === '1';
+	}
+	return state;
+}
+
+/**
+ * For a device with a `speaker` block (currently just the Anthem), queries
+ * volume/input/mute -- one round trip per field, see the module doc comment
+ * for why they can't be batched into a single write -- and returns whatever
+ * subset of {volume, input, mute} it was able to parse. Devices without a
+ * `speaker` block (the projector) are untouched: returns {} immediately
+ * without sending anything extra.
+ * @param {import('./deviceConnection').DeviceConnection} conn
+ * @param {object} device_info - a devices.json entry
+ * @returns {Promise<{volume?: number, input?: number, mute?: boolean}>}
+ */
+async function queryAnthemSpeakerExtras(conn, device_info) {
+	if (!device_info || !device_info.speaker) {
+		return {};
+	}
+	const speaker = device_info.speaker;
+	const commands = device_info.commands || {};
+	const queries = [speaker.volumeQuery, commands.input_query, speaker.muteQuery || 'Z1MUT?;'].filter(Boolean);
+
+	let merged = {};
+	for (const query of queries) {
+		const response = await conn.send(query, { expectResponse: true });
+		if (response) {
+			merged = { ...merged, ...parseAnthemSpeakerState(response) };
+		}
+	}
+	return merged;
 }
 
 /**
@@ -295,7 +382,8 @@ async function send_ip_command(debug_id, device_info, device_cmd, check_for_powe
 			}
 
 			if (resultingPowerState) {
-				mqttTopics.publishState(device_info, { power: resultingPowerState }, 'command');
+				const extras = await queryAnthemSpeakerExtras(conn, device_info);
+				mqttTopics.publishState(device_info, { power: resultingPowerState, ...extras }, 'command');
 			}
 		} else {
 			await sendAllIpCommands(conn, debug_id, device_cmd);
@@ -339,7 +427,8 @@ async function pollDevicePower(device) {
 		const response = await conn.send(device.power_commands.power_query, { expectResponse: true });
 		const powerState = parsePowerResponse(device, response);
 		if (powerState) {
-			mqttTopics.publishState(device, { power: powerState }, 'poll');
+			const extras = await queryAnthemSpeakerExtras(conn, device);
+			mqttTopics.publishState(device, { power: powerState, ...extras }, 'poll');
 		}
 	} catch (err) {
 		console.log('IP power poll for %s failed: %s', device.id || device.address, err.message);
@@ -498,6 +587,8 @@ module.exports = {
     startIpPowerPoller,
     // Exported for tests only.
     parsePowerResponse,
+    parseAnthemSpeakerState,
+    queryAnthemSpeakerExtras,
     deriveTerminator,
     _legacy_send_ip_command,
     _persistentConnectionsEnabled: persistentConnectionsEnabled,

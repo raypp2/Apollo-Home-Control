@@ -61,8 +61,15 @@ function waitUntil(conditionFn, { timeoutMs = 1000, intervalMs = 10 } = {}) {
  * off the wire -- pass `';'` to emulate an Anthem-style device whose whole
  * command language (not just the response) is `;`-terminated with no `\r`
  * anywhere, per issue #13's follow-up fix.
+ *
+ * `extraResponses` (optional) is a plain `{ cmd: response }` map for
+ * additional query/response pairs beyond power (e.g. the Anthem's
+ * `Z1VOL?;`/`Z1INP?;`/`Z1MUT?;` speaker-state queries) -- lets a single
+ * fixture answer several independent single-field queries the way the real
+ * receiver does when tcpServers.js's queryAnthemSpeakerExtras() sends them
+ * one round trip at a time.
  */
-function startPowerAwareFixture(port, { queryCmd, onCmd, offCmd, onResponse, offResponse, initialState = 'off', wireTerminator = '\r' }) {
+function startPowerAwareFixture(port, { queryCmd, onCmd, offCmd, onResponse, offResponse, initialState = 'off', wireTerminator = '\r', extraResponses = {} }) {
     let state = initialState;
     const received = [];
     return new Promise((resolve) => {
@@ -82,6 +89,8 @@ function startPowerAwareFixture(port, { queryCmd, onCmd, offCmd, onResponse, off
                         state = 'on';
                     } else if (cmd === offCmd) {
                         state = 'off';
+                    } else if (Object.prototype.hasOwnProperty.call(extraResponses, cmd)) {
+                        socket.write(extraResponses[cmd]);
                     }
                 }
             });
@@ -202,6 +211,122 @@ test('Anthem-style device (`;`-terminated, no \\r): terminal derived as \';\' an
 
     assert.deepStrictEqual(received, ['Z1POW?;', 'Z1POW1;', 'Z1INP1;']);
     assert.ok(published.some((p) => p.payload.power === 'ON'), `expected a power:ON publish, got ${JSON.stringify(published)}`);
+});
+
+// --- Anthem speaker state (volume/input/mute) -- Dashboard increment 4 ---
+
+test('parseAnthemSpeakerState extracts power/volume/input/mute from a fully concatenated buffer', () => {
+    const state = tcpServers.parseAnthemSpeakerState('Z1POW1;Z1VOL-36;Z1INP5;Z1MUT0;');
+    assert.deepStrictEqual(state, { power: 'ON', volume: -36, input: 5, mute: false });
+});
+
+test('parseAnthemSpeakerState tolerates zero-padded input (Z1INP05, as the SET command uses) same as the unpadded query reply', () => {
+    assert.deepStrictEqual(tcpServers.parseAnthemSpeakerState('Z1INP05'), { input: 5 });
+    assert.deepStrictEqual(tcpServers.parseAnthemSpeakerState('Z1INP5'), { input: 5 });
+});
+
+test('parseAnthemSpeakerState parses power OFF and mute ON', () => {
+    assert.deepStrictEqual(tcpServers.parseAnthemSpeakerState('Z1POW0;Z1MUT1;'), { power: 'OFF', mute: true });
+});
+
+test('parseAnthemSpeakerState returns {} for null/undefined/no-match input', () => {
+    assert.deepStrictEqual(tcpServers.parseAnthemSpeakerState(null), {});
+    assert.deepStrictEqual(tcpServers.parseAnthemSpeakerState(undefined), {});
+    assert.deepStrictEqual(tcpServers.parseAnthemSpeakerState('GARBAGE'), {});
+});
+
+test('queryAnthemSpeakerExtras returns {} immediately for a device with no `speaker` block (the projector)', async () => {
+    const result = await tcpServers.queryAnthemSpeakerExtras({}, { commands: {} });
+    assert.deepStrictEqual(result, {});
+});
+
+test('send_ip_command power-check on an Anthem-shaped device also queries+publishes volume/input/mute', async () => {
+    delete process.env.ITACH_PERSISTENT_CONNECTIONS;
+    const { received, port } = await startPowerAwareFixture(0, {
+        queryCmd: 'Z1POW?;',
+        onCmd: 'Z1POW1;',
+        offCmd: 'Z1POW0;',
+        onResponse: 'Z1POW1;',
+        offResponse: 'Z1POW0;',
+        initialState: 'on',
+        wireTerminator: ';',
+        extraResponses: {
+            'Z1VOL?;': 'Z1VOL-36;',
+            'Z1INP?;': 'Z1INP5;',
+            'Z1MUT?;': 'Z1MUT0;',
+        },
+    });
+
+    const device = {
+        id: 'anthem',
+        type: 'ip_control',
+        address: '127.0.0.1',
+        port,
+        location: 'theater',
+        mqttName: 'anthem',
+        commands: { on: 'Z1POW1;', off: 'Z1POW0;', input_query: 'Z1INP?;', vol_up: 'Z1VUP05;' },
+        power_commands: {
+            power_query: 'Z1POW?;',
+            power_response_on: 'Z1POW1;',
+            power_response_off: 'Z1POW0;',
+            power_on_delay: 10,
+            power_off_delay: 10,
+        },
+        speaker: {
+            volumeQuery: 'Z1VOL?;',
+        },
+    };
+    mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
+
+    await tcpServers.send_ip_command(1, device, device.commands.vol_up, true);
+    await waitUntil(() => received.length >= 5);
+
+    assert.deepStrictEqual(received, ['Z1POW?;', 'Z1VUP05;', 'Z1VOL?;', 'Z1INP?;', 'Z1MUT?;']);
+
+    const publishedState = published.find((p) => p.payload.power === 'ON' && 'volume' in p.payload);
+    assert.ok(publishedState, `expected a merged power+volume+input+mute publish, got ${JSON.stringify(published)}`);
+    assert.strictEqual(publishedState.payload.power, 'ON');
+    assert.strictEqual(publishedState.payload.volume, -36);
+    assert.strictEqual(publishedState.payload.input, 5);
+    assert.strictEqual(publishedState.payload.mute, false);
+});
+
+test('send_ip_command power-check on the projector (no `speaker` block) does NOT send any extra queries', async () => {
+    delete process.env.ITACH_PERSISTENT_CONNECTIONS;
+    const { received, port } = await startPowerAwareFixture(0, {
+        queryCmd: '%1POWR ?\r',
+        onCmd: '%1POWR 1\r',
+        offCmd: '%1POWR 0\r',
+        onResponse: '%1POWR=1\r',
+        offResponse: '%1POWR=0\r',
+        initialState: 'on',
+    });
+
+    const device = {
+        id: 'projector',
+        type: 'ip_control',
+        address: '127.0.0.1',
+        port,
+        commands: { on: '%1POWR 1\r', off: '%1POWR 0\r', input1: '%1INPT 21\r' },
+        power_commands: {
+            power_query: '%1POWR ?\r',
+            power_response_on: '%1POWR=1\r',
+            power_response_off: '%1POWR=0\r',
+        },
+    };
+    mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
+
+    await tcpServers.send_ip_command(1, device, device.commands.input1, true);
+    await waitUntil(() => received.length >= 2);
+    // Give a beat to make sure nothing extra shows up beyond query + command.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.deepStrictEqual(received, ['%1POWR ?\r', '%1INPT 21\r']);
+    const publishedState = published.find((p) => p.payload.power === 'ON');
+    assert.ok(publishedState);
+    assert.strictEqual('volume' in publishedState.payload, false);
+    assert.strictEqual('input' in publishedState.payload, false);
+    assert.strictEqual('mute' in publishedState.payload, false);
 });
 
 test('PJLink-style device (`\\r`-terminated) still round-trips correctly alongside the Anthem terminator handling', async () => {

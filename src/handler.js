@@ -38,7 +38,8 @@ const { send_somfy_command }                    // Somfy Shades
         = require('./somfyBridge');
 
 const { spotifySwitchPlay,                      // Spotify Playback Control
-        spotifyStopPlay }                     
+        spotifyStopPlay,
+        spotifyResume }
         = require('./spotify');
 
 const { find_my_iphone_alert }                  // Find My iPhone Alert
@@ -210,6 +211,12 @@ function handleDevice(debugId, apiDevice, apiCommand, apiParam1, apiParam2, resp
             if(apiCommand=="ON") {
                 spotifySwitchPlay(curDevice.address,false,nextDebugId);
             } else if(apiCommand=="OFF") {
+                spotifyStopPlay(curDevice.address,nextDebugId);
+            } else if(apiCommand=="PLAY") {
+                // Now-playing card transport: resume on whatever device is
+                // active, WITHOUT re-transferring to the Echo (that's ON's job).
+                spotifyResume(nextDebugId);
+            } else if(apiCommand=="PAUSE") {
                 spotifyStopPlay(curDevice.address,nextDebugId);
             } else {
                 spotifySwitchPlay(curDevice.address,curExecute,nextDebugId);
@@ -540,6 +547,30 @@ function handleAC(debugId, apiDevice, apiCommand, apiParam1, response) {
         console.log("%d - Device not found", debugId);
         if (typeof response != 'undefined') { response.status(404).send("ERROR: Device not found."); }
         return;
+    }
+
+    // Dashboard climate shadow routing: the AC is a one-way IR blaster, so
+    // Apollo holds an assumed state and translates absolute intents into
+    // relative IR (see src/climateShadow.js). setpoint/mode/fan/power drive IR
+    // + update the shadow; override_* corrects the shadow WITHOUT sending IR.
+    // Lazy require avoids load-order coupling; safe no-op in dry-run.
+    if (curDevice.isAC || (curDevice.alexa && curDevice.alexa.isAC)) {
+        const done = () => { if (typeof response != 'undefined') { response.end("Completed processing request."); } };
+        const climate = (() => { try { return require('./climateShadow'); } catch (e) { return null; } })();
+        if (climate) {
+            switch (apiCommand) {
+                case "SETPOINT": climate.setSetpoint(Number(apiParam1)); done(); return;
+                case "MODE": climate.setMode(String(apiParam1).toUpperCase()); done(); return;
+                case "FAN": climate.setFan(String(apiParam1).toLowerCase()); done(); return;
+                case "OVERRIDE_SETPOINT": climate.override({ setpoint: Number(apiParam1) }); done(); return;
+                case "OVERRIDE_MODE": climate.override({ mode: String(apiParam1).toUpperCase() }); done(); return;
+                case "OVERRIDE_FAN": climate.override({ fan: String(apiParam1).toLowerCase() }); done(); return;
+                case "OVERRIDE_POWER": climate.override({ power: apiParam1 === 'ON' || apiParam1 === 'TRUE' }); done(); return;
+                case "ON": climate.setPower(true); done(); return;
+                case "OFF": climate.setPower(false); done(); return;
+                default: break; // fall through to raw IR command handling
+            }
+        }
     }
 
     // Search for the command

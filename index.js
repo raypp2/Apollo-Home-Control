@@ -185,6 +185,17 @@ require('./src/healthMonitor').start();
 // in dry-run and with the broker down, same as healthMonitor above.
 require('./src/sceneShadow').start();
 
+// Climate shadow state (dashboard redesign, increment 4 -- see
+// documentation/dashboard-redesign-plan.md §4.4). `livingRoomAC` is a
+// one-way IR blaster with zero readback, so this module holds Apollo's own
+// assumed ("shadow") state -- {power, mode, setpoint, fan} -- and translates
+// absolute dashboard intents into the AC's relative IR commands. handler.js's
+// handleAC calls its setPower()/setMode()/setSetpoint()/setFan()/override()
+// directly. start() only seeds the shadow from retained state (or defaults)
+// and republishes -- it never sends IR on its own, so it's safe in dry-run
+// and with the broker down, same as sceneShadow above.
+require('./src/climateShadow').start();
+
 // Spotify now-playing publisher (Stage 9, issue #22) -- opt-in via
 // SPOTIFY_NOW_PLAYING=1 since it costs a Spotify API call every 10s around
 // the clock; not worth running until Stage 11 puts a now-playing card on the

@@ -1,0 +1,22 @@
+/* Apollo v2 dashboard -- AV cluster / now-playing (increment 4).
+   Only the bits that need real CSS (keyframe animation) live here; everything
+   else in this module is inline style objects, matching the rest of the
+   panel components. */
+
+@keyframes av-eq-bar {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+
+.av-eq-bar {
+  display: inline-block;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent, #a688e8);
+  transform-origin: bottom;
+  animation: av-eq-bar 0.9s ease-in-out infinite;
+}
+
+.av-eq-bar:nth-child(1) { height: 10px; animation-delay: -0.6s; }
+.av-eq-bar:nth-child(2) { height: 14px; animation-delay: -0.3s; }
+.av-eq-bar:nth-child(3) { height: 8px; animation-delay: 0s; }
