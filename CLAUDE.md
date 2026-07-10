@@ -16,10 +16,22 @@ Single-owner, single-install. Deployed by rsync to Raspberry Pi 5.
 - `src/spotify.js`, `src/findMy.js`, `src/alexaSpeaker.js`, `src/alexaAC.js` — single-purpose modules.
 - `src/tcpServers.js` — generic IP-control device sender used by handler.
 - `src/sqsListener.js` — long-polls AWS SQS, dispatches messages to `handleRequest`.
-- `src/webServer.js` — Express on port 80; serves the static `public/` UI and exposes `/api/<MODULE>/<DEVICE>/<COMMAND>/<P1>/<P2>`.
+- `src/webServer.js` — Express on port 80. Serves the new Preact dashboard (`public/app/`) at `/`, the old AngularJS UI at `/legacy`, and exposes `/api/<MODULE>/<DEVICE>/<COMMAND>/<P1>/<P2>` plus `/list/<type>` and `/api/health`.
+- `src/sceneShadow.js` — retained scene/macro active state on `apollo/home/{scene,macro}/<id>/state`, with per-scene fingerprint learning (snapshot device state after activation) + drift detection. Fed from `scene_command`/`handleMacro`.
+- `src/climateShadow.js` — Apollo-side assumed state for the one-way IR air conditioner (power/mode/setpoint/fan); translates absolute setpoints into relative IR steps; manual override without IR. Routed via the `AC` module.
 - `src/alexaTriggers.js` — generates `config/triggers.json` at startup from the other configs (used by the Apollo Alexa Skill Lambda).
-- `config/*.json` — runtime config. Personal versions are gitignored; `*.example` files are committed as templates.
-- `public/` — static UI (HTML, CSS, fonts, JS). Served at `/`.
+- `config/*.json` — runtime config. Personal versions are gitignored + symlinked into `../apollo-home-control-private/config/`; `*.example` files are committed as templates. `config/rooms.json` (a real file here, not symlinked) holds the dashboard floorplan: rooms (rect/furniture/fixtures), decorative labels (`decorative:true`), and multi-position fixtures (a device's `fixtures` value may be `{x,y}` or an array).
+- `public/app/` — the built Preact dashboard (gitignored; built from `web/` and rsynced). Served at `/`.
+- `public/` — the legacy AngularJS UI + shared assets. Served at `/legacy`.
+
+## Dashboard (`web/`, Stage 11 — live)
+
+The primary UI is a **Preact + Vite** app in `web/` (isolated `web/package.json`; deps preact, mqtt, @preact/signals). It builds to `public/app/` (base `/`) and is served at `/`; the old AngularJS UI is kept at `/legacy`.
+
+- **State layer** (`web/src/state/`): `bootstrap.js` hydrates from `/api/health` + `/list/*`; `mqtt.js` connects `ws://<host>:9001` for live state (polling fallback); `store.js` is a `@preact/signals` store keyed by MQTT `stateTopic`; `commands.js` is the dispatch + view-model layer; `optimistic.js` handles optimistic updates.
+- **Surfaces**: `plan/` (isometric floorplan from `rooms.json`), `panel/` (room command panel + Accent/DMX drill-in), `av/` + `climate/` (pinned bottom cluster + drill-ins), `scenes/` (tiered scene bar, More menu, room toggle), `status/` (system status screen).
+- **Floorplan editing**: `_scripts/floorplan-export.mjs` → layered SVG (`documentation/floorplan-editable.svg`) editable in Illustrator; `floorplan-import.mjs --write` reloads it into `rooms.json`. Reads `inkscape:label` for identity (Illustrator mangles duplicate ids).
+- **Dev**: `cd web && npm run dev` (Vite, proxies `/api`+`/list` to `localhost:80`) alongside a running backend. The deploy builds `web/` on the Mac; the Pi never runs Vite.
 
 ## Running
 
@@ -49,7 +61,7 @@ bash private/update-pi.sh -y          # sync only, skip confirmation
 bash private/update-pi.sh -y --restart  # sync + restart (no npm ci)
 ```
 
-Only use `--install` (npm ci) when `package-lock.json` has changed. The script excludes `.git/`, `.env`, `node_modules/`, `documentation/`, `.claude/`, and `private/` from the rsync.
+Only use `--install` (npm ci) when the root `package-lock.json` has changed (the dashboard's `web/` deps live only on the Mac). The script **builds `web/` → `public/app/` on the Mac first** (the Pi never runs Vite), then rsyncs; it excludes `.git/`, `.env`, `node_modules/`, `documentation/`, `.claude/`, `web/`, and `private/`, and uses `rsync -L` so the symlinked `config/*.json` resolve to real files on the Pi. **Standing preference: after a verified batch of changes, deploy automatically** (see the private deploy memory) — "committed" is not "live". A browser may cache the old `index.html`; hard-refresh after a deploy.
 
 ## Coding patterns to know
 
