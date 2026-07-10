@@ -40,7 +40,7 @@ function useDefaultRoom() {
   useEffect(() => {
     bootstrap().then(() => {
       if (ui.selectedRoom.value) return;
-      const rooms = store.rooms.value;
+      const rooms = store.rooms.value.filter((r) => !r.decorative);
       const pick = rooms.find((r) => r.id === 'living' && r.selectable !== false)
         || rooms.find((r) => r.selectable !== false);
       if (pick) ui.selectRoom(pick.id);

@@ -19,13 +19,57 @@
 // we can scan with regexes reliably. This is NOT a general SVG parser; see
 // LIMITATIONS below for what happens when an editor rewrites the structure.
 //
+// ROOMS.JSON SCHEMA v2:
+//   Room     — as before, but a `fixtures` value may be a single {x,y} OR
+//              an array [{x,y}, ...] for a device with more than one dot on
+//              the plan (all controlling the same device).
+//   Decoration — { id, label, decorative: true, rect: {x,y,w,h} }. A purely
+//              cosmetic floorplan label (e.g. a closet outline) — never
+//              interactive, never has furniture/fixtures. Always sorted to
+//              the end of the output array.
+//
 // GEOMETRY -> DATA MODEL:
 //   room:<roomId>               -> room.rect (absolute x/y/w/h read directly)
 //   furn:<roomId>:<i>           -> furniture[i], position made room-relative
 //   furn:<roomId>:<i>:<k>       -> furniture[i].kids[k], position made
 //                                  relative to the PARENT FURNITURE item
 //                                  (matches web/src/plan/Furniture.jsx)
-//   fixture:<roomId>:<deviceId> -> fixtures[deviceId], room-relative
+//   fixture:<roomId>:<deviceId> -> fixtures[deviceId], room-relative. May be
+//                                  backed by MULTIPLE <circle>s (see below).
+//
+// ILLUSTRATOR ID MANGLING: when a shape is duplicated in Illustrator, the
+// duplicate keeps the same visual identity but gets a NEW, uniquified `id`
+// (typically the old id with a numeric "-N" suffix tacked on, e.g.
+// "room:office" -> "room:office-8"). Illustrator does NOT rewrite
+// `inkscape:label`, so that's the channel the user has to communicate real
+// intent past the mangling:
+//   - IDENTITY PREFERENCE: for any element, this importer prefers
+//     `inkscape:label` over `id` when the label itself parses as one of our
+//     conventions (room:/furn:/fixture:/closet:/decoration:). This is how a
+//     duplicated element can be told apart from a merely-renamed one, and
+//     how a new furniture item can be pinned to a clean index (e.g. give a
+//     duplicate the label "furn:master:3" instead of living with whatever
+//     mangled id "furn:master:2-5" Illustrator produced).
+//   - FURNITURE indices tolerate a dash-suffixed digit chain (e.g. "1-9",
+//     "2-7-7") as a distinct, valid furniture item — this is exactly what a
+//     duplicated furn:<room>:<i> turns into. These are grouped by their
+//     full id/label string (not coerced to the base number) so duplicates
+//     don't clobber the original; the output array order is the original
+//     numeric index ascending, ties broken by document order (so
+//     duplicates land right after their sibling).
+//   - FIXTURES: a device can appear as more than one <circle>. Identity is
+//     `fixture:<roomId>:<deviceId>[:<index>]`, read from inkscape:label
+//     when present (the reliable channel), else from `id` with a trailing
+//     Illustrator "-N" dup suffix stripped from the device id (only when
+//     the suffix is ALL digits, so device ids like "office-bookshelf" or
+//     "led-art-wall" are untouched). Positions for the same device are
+//     grouped and ordered by `:<index>` ascending (index 1 first); a single
+//     position emits `{x,y}`, more than one emits `[{x,y}, ...]`.
+//   - DECORATIONS: any element whose inkscape:label starts with "closet:"
+//     or "decoration:" is a decoration, never a room — regardless of what
+//     its `id` looks like (Illustrator duplication of an existing room rect
+//     is exactly how a user creates one, so the id often looks like a
+//     mangled room id; the label is what overrides that).
 //
 // LOSSLESS FIELDS: r, rot, selectable, label, links, and the kids array
 // shape are read from data-* attributes on the element. If a data-*
@@ -46,12 +90,18 @@
 //     rotation/scale (not just translation), this script does NOT attempt
 //     to decompose it: it applies only the translation component (best
 //     effort) and KEEPS the original stashed data-rot, printing a warning
-//     asking you to check that item's rotation by hand. Illustrator/
-//     Inkscape usually only do this if you grab the rotate handle directly
-//     (not for a plain drag), so this only bites if you rotate.
-//   - Adding brand-new rooms/furniture/fixtures (ids the exporter never
-//     emitted) is NOT supported — only edits/deletions of existing ids are
-//     read. Add new entries directly in rooms.json instead.
+//     asking you to check that item's rotation by hand.
+//   - A <g> whose OWN id or inkscape:label identifies it as a furniture or
+//     fixture item (furn:<room>:<i> / fixture:<room>:<device>), but which
+//     contains NO rect/circle carrying that same identity (e.g. the user
+//     replaced the shape with arbitrary artwork, or nested it too deeply
+//     for our regex scan to see), has no live geometry to read. This script
+//     falls back to the embedded metadata for that exact index if
+//     available; if not, it SKIPS the item entirely and prints a warning
+//     naming the element so a human can re-add it by hand.
+//   - Adding a brand-new ROOM (an id the exporter never emitted, with no
+//     recognizable furn:/fixture:/closet:/decoration: label) is NOT
+//     supported — add it directly in rooms.json instead.
 //
 // USAGE:
 //   node _scripts/floorplan-import.mjs                     # dry run -> config/rooms.json.imported
@@ -145,7 +195,10 @@ function readSvg(file) {
 
 // Order-preserving tokenizer: walks <g ...>, </g>, <rect .../>,
 // <circle .../>, and <metadata>...</metadata> in document order, maintaining
-// a real stack so `enclosingTransform` reflects genuine nesting.
+// a real stack so `enclosingTransform` reflects genuine nesting. Also
+// records every <g> element itself (attrs + transform) in `groups`, in
+// document order, keyed by nothing in particular — callers filter for the
+// ones whose own id/label identify them as a furniture or fixture item.
 function reScanWithStack(svgRaw) {
   // Strip XML comments first — our own header comment documents the id
   // conventions using literal <g>/<rect> text, which would otherwise be
@@ -155,6 +208,7 @@ function reScanWithStack(svgRaw) {
   const svg = svgRaw.replace(/<!--[\s\S]*?-->/g, '');
   const tokenRe = /<g\b([^>]*)>|<\/g>|<rect\b([^>]*)\/>|<circle\b([^>]*)\/>|<metadata\b[^>]*>[\s\S]*?<\/metadata>/g;
   const elements = [];
+  const groups = [];
   const gStack = [];
   let m;
   while ((m = tokenRe.exec(svg))) {
@@ -167,6 +221,7 @@ function reScanWithStack(svgRaw) {
     if (full.startsWith('<g')) {
       const attrs = parseAttrs(m[1] || '');
       gStack.push(attrs.transform || null);
+      groups.push({ attrs, transform: attrs.transform || null });
       continue;
     }
     if (full.startsWith('<rect')) {
@@ -180,7 +235,7 @@ function reScanWithStack(svgRaw) {
       continue;
     }
   }
-  return elements;
+  return { elements, groups };
 }
 
 function readMetadataFallback(svgRaw) {
@@ -197,7 +252,7 @@ function readMetadataFallback(svgRaw) {
 
 function metadataLookup(fallbackRooms) {
   const roomsById = new Map();
-  if (!fallbackRooms) return { room: () => null, furniture: () => null, fixture: () => null };
+  if (!fallbackRooms) return { room: () => null, furniture: () => null, kid: () => null };
   for (const r of fallbackRooms) roomsById.set(r.id, r);
   return {
     room: (roomId) => roomsById.get(roomId) || null,
@@ -206,11 +261,107 @@ function metadataLookup(fallbackRooms) {
   };
 }
 
+// --- identity resolution: inkscape:label preferred, id as fallback -------
+//
+// A single regex covers both `furn:<room>:<idx>` and its kid form
+// `furn:<room>:<idx>:<kidIdx>`. <idx>/<kidIdx> tolerate a dash-suffixed
+// digit chain (e.g. "1-9", "2-7-7") because that's exactly what Illustrator
+// produces when a furn:<room>:<idx> item is duplicated — the duplicate is a
+// genuinely distinct furniture item, not a rename of the original, so it's
+// kept as its own key rather than being coerced to a bare number.
+const FURN_RE = /^furn:([^:]+):([0-9]+(?:-[0-9]+)*)(?::([0-9]+(?:-[0-9]+)*))?$/;
+
+function furnIdentity(el) {
+  const label = el.attrs['inkscape:label'];
+  if (label) {
+    const m = FURN_RE.exec(label);
+    if (m) return { roomId: m[1], idxKey: m[2], kidKey: m[3] || null };
+  }
+  const id = el.attrs.id;
+  if (id) {
+    const m = FURN_RE.exec(id);
+    if (m) return { roomId: m[1], idxKey: m[2], kidKey: m[3] || null };
+  }
+  return null;
+}
+
+// Same idea for fixtures, but the identity string carries the device id
+// directly (not a bare number), plus an optional `:<index>` for
+// multi-position devices. `fixture:<room>:<device>:<index>` is the
+// canonical form (reliable only via inkscape:label, since it's a 3rd colon
+// segment an `id` fallback can't tell apart from a device id containing a
+// colon). The `id` fallback strips a trailing Illustrator "-N" dup suffix
+// from the device id — but ONLY when the suffix is purely digits, so real
+// hyphenated device ids like "office-bookshelf" or "led-art-wall" are left
+// alone.
+const FIXTURE_LABEL_RE = /^fixture:([^:]+):(.+):([0-9]+)$/;
+const FIXTURE_ID_RE = /^fixture:([^:]+):(.+)$/;
+const TRAILING_NUMERIC_DUP_RE = /^(.*)-([0-9]+)$/;
+
+function fixtureIdentity(el) {
+  const label = el.attrs['inkscape:label'];
+  if (label) {
+    let m = FIXTURE_LABEL_RE.exec(label);
+    if (m) return { roomId: m[1], deviceId: m[2], index: Number(m[3]) };
+    m = FIXTURE_ID_RE.exec(label);
+    if (m) return { roomId: m[1], deviceId: m[2], index: null };
+  }
+  const id = el.attrs.id;
+  if (id) {
+    const m = FIXTURE_ID_RE.exec(id);
+    if (m) {
+      let deviceId = m[2];
+      const dup = TRAILING_NUMERIC_DUP_RE.exec(deviceId);
+      if (dup) deviceId = dup[1];
+      return { roomId: m[1], deviceId, index: null };
+    }
+  }
+  return null;
+}
+
+// Any element (in practice: a room-shaped rect the user duplicated and
+// relabeled) whose inkscape:label starts with "closet:" or "decoration:" is
+// a decoration, not a room — regardless of its id.
+function decorationLabel(el) {
+  const label = el.attrs['inkscape:label'];
+  if (label && /^(?:closet|decoration):.+$/.test(label)) return label;
+  return null;
+}
+
+function decorationFromLabel(label, rect) {
+  const m = /^(closet|decoration):(.+)$/.exec(label);
+  const kind = m[1];
+  const rest = m[2];
+  const slug = `${kind}-${rest
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-+|-+$)/g, '')}`;
+  const title = rest
+    .replace(/[-_]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(' ');
+  return { id: slug, label: title, decorative: true, rect };
+}
+
+// Groups a furniture/kid Map's string keys ("0", "1-9", "2-7-7", ...) into
+// output order: ascending by the leading numeric index, ties broken by
+// original (document/insertion) order — Array.prototype.sort is stable, and
+// Map iteration order is insertion order, so this is enough to put
+// duplicates right after the sibling they were duplicated from.
+function baseIdx(key) {
+  return parseInt(key.split('-')[0], 10);
+}
+function orderedKeys(map) {
+  return [...map.keys()].sort((a, b) => baseIdx(a) - baseIdx(b));
+}
+
 function main() {
   const svg = readSvg(SVG_FILE);
   const fallbackRooms = readMetadataFallback(svg);
   const lookup = metadataLookup(fallbackRooms);
-  const elements = reScanWithStack(svg);
+  const { elements, groups } = reScanWithStack(svg);
 
   // --- absolute position of each element, with transform applied ---
   function absPos(el) {
@@ -256,103 +407,161 @@ function main() {
   }
 
   const roomIdRe = /^room:(.+)$/;
-  const furnRe = /^furn:([^:]+):(\d+)$/;
-  const kidRe = /^furn:([^:]+):(\d+):(\d+)$/;
-  const fixtureRe = /^fixture:([^:]+):(.+)$/;
 
   const roomsById = new Map(); // roomId -> { rect, label, selectable, links, order }
-  const furnByRoom = new Map(); // roomId -> Map(idx -> {abs, r, rot})
-  const kidsByRoom = new Map(); // roomId -> Map(idx -> Map(kidIdx -> {abs, r}))
-  const fixturesByRoom = new Map(); // roomId -> Map(deviceId -> {abs})
+  const decorations = []; // { id, label, decorative, rect }, in document order
+  const furnByRoom = new Map(); // roomId -> Map(idxKey -> {x,y,w,h,r,rot})
+  const kidsByRoom = new Map(); // roomId -> Map(idxKey -> Map(kidKey -> {x,y,w,h,r}))
+  const fixturesByRoom = new Map(); // roomId -> Map(deviceId -> [{x,y,index}])
 
   let roomOrder = 0;
   for (const el of elements) {
     const id = el.attrs.id;
-    if (!id) continue;
 
-    let m;
-    if (el.tag === 'rect' && (m = roomIdRe.exec(id)) && !furnRe.test(id) && !kidRe.exec(id)) {
-      const roomId = m[1];
-      const pos = absPos(el);
-      let label = el.attrs['data-label'];
-      let selectableAttr = el.attrs['data-selectable'];
-      let linksAttr = el.attrs['data-links'];
-      if (label === undefined) {
-        const fb = lookup.room(roomId);
-        if (fb) { label = fb.label; warn(`room:${roomId} missing data-label, recovered from embedded metadata`); }
+    if (el.tag === 'rect') {
+      const decLabel = decorationLabel(el);
+      if (decLabel) {
+        const pos = absPos(el);
+        decorations.push(decorationFromLabel(decLabel, { x: round(pos.x), y: round(pos.y), w: round(pos.w), h: round(pos.h) }));
+        continue;
       }
-      if (selectableAttr === undefined) {
-        const fb = lookup.room(roomId);
-        if (fb) { selectableAttr = String(fb.selectable !== false); warn(`room:${roomId} missing data-selectable, recovered from embedded metadata`); }
+
+      const fi = furnIdentity(el);
+      if (fi && fi.kidKey != null) {
+        const { roomId, idxKey, kidKey } = fi;
+        const pos = absPos(el);
+        let r = el.attrs['data-r'];
+        if (r === undefined) {
+          const fb = lookup.kid(roomId, Number(idxKey), Number(kidKey));
+          if (fb) { r = fb.r; warn(`furn:${roomId}:${idxKey}:${kidKey} missing data-r, recovered from embedded metadata`); }
+        }
+        if (!kidsByRoom.has(roomId)) kidsByRoom.set(roomId, new Map());
+        const byIdx = kidsByRoom.get(roomId);
+        if (!byIdx.has(idxKey)) byIdx.set(idxKey, new Map());
+        byIdx.get(idxKey).set(kidKey, { x: pos.x, y: pos.y, w: pos.w, h: pos.h, r });
+        continue;
       }
-      let links;
-      if (linksAttr) {
-        links = linksAttr.split(',').map((s) => s.trim()).filter(Boolean);
-      } else {
-        const fb = lookup.room(roomId);
-        if (fb && Array.isArray(fb.links) && fb.links.length) links = fb.links.slice();
+
+      if (fi) {
+        const { roomId, idxKey } = fi;
+        const pos = absPos(el);
+        let r = el.attrs['data-r'];
+        let rot = el.attrs['data-rot'];
+        if (pos.rotOverride) rot = pos.rotOverride;
+        if (pos.rotUnsupportedWarning) {
+          warn(`furn:${roomId}:${idxKey} has an enclosing transform with rotation/scale baked into a matrix — keeping stashed rotation (${rot ?? 'none'}) and applying its translation component only; please verify this item's rotation by hand`);
+        }
+        if (r === undefined) {
+          const fb = lookup.furniture(roomId, Number(idxKey));
+          if (fb) { r = fb.r; warn(`furn:${roomId}:${idxKey} missing data-r, recovered from embedded metadata`); }
+        }
+        if (rot === undefined) {
+          const fb = lookup.furniture(roomId, Number(idxKey));
+          if (fb && fb.rot != null) { rot = fb.rot; warn(`furn:${roomId}:${idxKey} missing data-rot, recovered from embedded metadata`); }
+        }
+        if (!furnByRoom.has(roomId)) furnByRoom.set(roomId, new Map());
+        furnByRoom.get(roomId).set(idxKey, { x: pos.x, y: pos.y, w: pos.w, h: pos.h, r, rot });
+        continue;
       }
-      roomsById.set(roomId, {
-        id: roomId,
-        label: label !== undefined ? label : roomId,
-        selectable: selectableAttr !== undefined ? selectableAttr === 'true' : true,
-        rect: { x: pos.x, y: pos.y, w: pos.w, h: pos.h },
-        links,
-        order: roomOrder++,
-      });
+
+      if (id && roomIdRe.test(id)) {
+        const roomId = roomIdRe.exec(id)[1];
+        const pos = absPos(el);
+        let label = el.attrs['data-label'];
+        let selectableAttr = el.attrs['data-selectable'];
+        let linksAttr = el.attrs['data-links'];
+        if (label === undefined) {
+          const fb = lookup.room(roomId);
+          if (fb) { label = fb.label; warn(`room:${roomId} missing data-label, recovered from embedded metadata`); }
+        }
+        if (selectableAttr === undefined) {
+          const fb = lookup.room(roomId);
+          if (fb) { selectableAttr = String(fb.selectable !== false); warn(`room:${roomId} missing data-selectable, recovered from embedded metadata`); }
+        }
+        let links;
+        if (linksAttr) {
+          links = linksAttr.split(',').map((s) => s.trim()).filter(Boolean);
+        } else {
+          const fb = lookup.room(roomId);
+          if (fb && Array.isArray(fb.links) && fb.links.length) links = fb.links.slice();
+        }
+        roomsById.set(roomId, {
+          id: roomId,
+          label: label !== undefined ? label : roomId,
+          selectable: selectableAttr !== undefined ? selectableAttr === 'true' : true,
+          rect: { x: pos.x, y: pos.y, w: pos.w, h: pos.h },
+          links,
+          order: roomOrder++,
+        });
+        continue;
+      }
+
+      // unrecognized rect (e.g. plane-bounds guide) — ignore
       continue;
     }
 
-    if (el.tag === 'rect' && (m = kidRe.exec(id))) {
-      const [, roomId, idxStr, kidIdxStr] = m;
-      const idx = Number(idxStr);
-      const kidIdx = Number(kidIdxStr);
+    // circle
+    const fx = fixtureIdentity(el);
+    if (fx) {
       const pos = absPos(el);
-      let r = el.attrs['data-r'];
-      if (r === undefined) {
-        const fb = lookup.kid(roomId, idx, kidIdx);
-        if (fb) { r = fb.r; warn(`${id} missing data-r, recovered from embedded metadata`); }
-      }
-      if (!kidsByRoom.has(roomId)) kidsByRoom.set(roomId, new Map());
-      const byIdx = kidsByRoom.get(roomId);
-      if (!byIdx.has(idx)) byIdx.set(idx, new Map());
-      byIdx.get(idx).set(kidIdx, { x: pos.x, y: pos.y, w: pos.w, h: pos.h, r });
-      continue;
-    }
-
-    if (el.tag === 'rect' && (m = furnRe.exec(id))) {
-      const [, roomId, idxStr] = m;
-      const idx = Number(idxStr);
-      const pos = absPos(el);
-      let r = el.attrs['data-r'];
-      let rot = el.attrs['data-rot'];
-      if (pos.rotOverride) rot = pos.rotOverride;
-      if (pos.rotUnsupportedWarning) {
-        warn(`furn:${roomId}:${idx} has an enclosing transform with rotation/scale baked into a matrix — keeping stashed rotation (${rot ?? 'none'}) and applying its translation component only; please verify this item's rotation by hand`);
-      }
-      if (r === undefined) {
-        const fb = lookup.furniture(roomId, idx);
-        if (fb) { r = fb.r; warn(`furn:${roomId}:${idx} missing data-r, recovered from embedded metadata`); }
-      }
-      if (rot === undefined) {
-        const fb = lookup.furniture(roomId, idx);
-        if (fb && fb.rot != null) { rot = fb.rot; warn(`furn:${roomId}:${idx} missing data-rot, recovered from embedded metadata`); }
-      }
-      if (!furnByRoom.has(roomId)) furnByRoom.set(roomId, new Map());
-      furnByRoom.get(roomId).set(idx, { x: pos.x, y: pos.y, w: pos.w, h: pos.h, r, rot });
-      continue;
-    }
-
-    if (el.tag === 'circle' && (m = fixtureRe.exec(id))) {
-      const [, roomId, deviceId] = m;
-      const pos = absPos(el);
-      if (!fixturesByRoom.has(roomId)) fixturesByRoom.set(roomId, new Map());
-      fixturesByRoom.get(roomId).set(deviceId, { x: pos.x, y: pos.y });
-      continue;
+      if (!fixturesByRoom.has(fx.roomId)) fixturesByRoom.set(fx.roomId, new Map());
+      const byDevice = fixturesByRoom.get(fx.roomId);
+      if (!byDevice.has(fx.deviceId)) byDevice.set(fx.deviceId, []);
+      byDevice.get(fx.deviceId).push({ x: pos.x, y: pos.y, index: fx.index });
     }
   }
 
   if (roomsById.size === 0) fail(`no room:<id> rects found in ${SVG_FILE} — is this a file generated by floorplan-export.mjs?`);
+
+  // --- cross-check: a <g> that identifies itself (via id/label) as a
+  // furniture or fixture item, but has no rect/circle inside carrying that
+  // same identity, has no live geometry we can read. Fall back to the
+  // embedded metadata for that exact index; if that's not available either,
+  // skip the item and warn so a human knows to re-add it. ---
+  for (const g of groups) {
+    const label = g.attrs['inkscape:label'];
+    const gid = g.attrs.id;
+    const source = label || gid;
+    if (!source) continue;
+
+    const furnMatch = FURN_RE.exec(source);
+    if (furnMatch && furnMatch[3] == null) {
+      const roomId = furnMatch[1];
+      const idxKey = furnMatch[2];
+      const alreadyResolved = furnByRoom.get(roomId)?.has(idxKey);
+      if (alreadyResolved) continue; // normal cosmetic wrapper around a matching rect
+      const gT = parseTransform(g.transform);
+      const fb = lookup.furniture(roomId, Number(idxKey));
+      const room = roomsById.get(roomId);
+      if (fb && room) {
+        warn(`furn:${roomId}:${idxKey} (element id="${gid ?? '?'}") has no rect/circle geometry inside its group — recovering position/size entirely from embedded metadata (plus this group's translation); please verify by hand`);
+        if (!furnByRoom.has(roomId)) furnByRoom.set(roomId, new Map());
+        furnByRoom.get(roomId).set(idxKey, {
+          x: room.rect.x + fb.x + gT.dx,
+          y: room.rect.y + fb.y + gT.dy,
+          w: fb.w,
+          h: fb.h,
+          r: fb.r,
+          rot: fb.rot,
+        });
+      } else {
+        const reason = gT.unsupported
+          ? `its transform also bakes real rotation/scale into a matrix (${g.transform})`
+          : 'no embedded metadata fallback exists for that index either';
+        warn(`furn:${roomId}:${idxKey} (element id="${gid ?? '?'}"): no rect/circle geometry found inside the group (only non-rect content), and ${reason} — skipping this furniture item; please re-add it by hand and verify its position/rotation`);
+      }
+      continue;
+    }
+
+    const fixtureMatch = FIXTURE_ID_RE.exec(source);
+    if (fixtureMatch) {
+      const roomId = fixtureMatch[1];
+      const deviceId = fixtureMatch[2].replace(/:[0-9]+$/, '');
+      const already = fixturesByRoom.get(roomId)?.has(deviceId);
+      if (already) continue;
+      warn(`fixture:${roomId}:${deviceId} (element id="${gid ?? '?'}"): no circle geometry found inside the group — skipping this fixture position; please re-add it by hand`);
+    }
+  }
 
   // --- assemble rooms.json shape, making furniture/fixtures room-relative ---
   const rooms = [...roomsById.values()]
@@ -362,15 +571,14 @@ function main() {
         id: room.id,
         label: room.label,
         selectable: room.selectable,
-        rect: { x: room.rect.x, y: room.rect.y, w: room.rect.w, h: room.rect.h },
+        rect: { x: round(room.rect.x), y: round(room.rect.y), w: round(room.rect.w), h: round(room.rect.h) },
       };
 
       const furnMap = furnByRoom.get(room.id);
       const furniture = [];
       if (furnMap) {
-        const indices = [...furnMap.keys()].sort((a, b) => a - b);
-        for (const idx of indices) {
-          const f = furnMap.get(idx);
+        for (const idxKey of orderedKeys(furnMap)) {
+          const f = furnMap.get(idxKey);
           const item = {
             x: round(f.x - room.rect.x),
             y: round(f.y - room.rect.y),
@@ -379,10 +587,9 @@ function main() {
             r: f.r,
           };
           if (f.rot != null) item.rot = f.rot;
-          const kidMap = kidsByRoom.get(room.id)?.get(idx);
+          const kidMap = kidsByRoom.get(room.id)?.get(idxKey);
           if (kidMap) {
-            const kidIndices = [...kidMap.keys()].sort((a, b) => a - b);
-            item.kids = kidIndices.map((ki) => {
+            item.kids = orderedKeys(kidMap).map((ki) => {
               const k = kidMap.get(ki);
               return {
                 x: round(k.x - f.x),
@@ -403,8 +610,14 @@ function main() {
       const fixMap = fixturesByRoom.get(room.id);
       const fixtures = {};
       if (fixMap) {
-        for (const [deviceId, pos] of fixMap.entries()) {
-          fixtures[deviceId] = { x: round(pos.x - room.rect.x), y: round(pos.y - room.rect.y) };
+        for (const [deviceId, positions] of fixMap.entries()) {
+          const sorted = positions.slice().sort((a, b) => {
+            const ai = a.index == null ? 0 : a.index;
+            const bi = b.index == null ? 0 : b.index;
+            return ai - bi;
+          });
+          const rel = sorted.map((p) => ({ x: round(p.x - room.rect.x), y: round(p.y - room.rect.y) }));
+          fixtures[deviceId] = rel.length > 1 ? rel : rel[0];
         }
       }
       out.fixtures = fixtures;
@@ -414,17 +627,18 @@ function main() {
       return out;
     });
 
-  const rendered = JSON5.stringify(rooms, { space: 2, quote: '"' });
+  const combined = [...rooms, ...decorations];
+  const rendered = JSON5.stringify(combined, { space: 2, quote: '"' });
 
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
   fs.writeFileSync(OUT_FILE, rendered + '\n', 'utf8');
 
   // --- diff summary against the current rooms.json, if present ---
-  let summary = `floorplan-import: wrote ${path.relative(ROOT, OUT_FILE)} (${rooms.length} rooms)`;
+  let summary = `floorplan-import: wrote ${path.relative(ROOT, OUT_FILE)} (${rooms.length} rooms, ${decorations.length} decorations)`;
   if (fs.existsSync(ROOMS_FILE)) {
     try {
       const before = JSON5.parse(fs.readFileSync(ROOMS_FILE, 'utf8'));
-      summary += '\n' + diffSummary(before, rooms);
+      summary += '\n' + diffSummary(before, combined);
     } catch (e) {
       warn(`couldn't parse ${ROOMS_FILE} for a diff summary: ${e.message}`);
     }
@@ -447,8 +661,9 @@ function diffSummary(before, after) {
   for (const id of new Set([...beforeById.keys(), ...afterById.keys()])) {
     const b = beforeById.get(id);
     const a = afterById.get(id);
-    if (!b) { lines.push(`  + room ${id} (new)`); continue; }
-    if (!a) { lines.push(`  - room ${id} (removed)`); continue; }
+    const kind = (a && a.decorative) || (b && b.decorative) ? 'decoration' : 'room';
+    if (!b) { lines.push(`  + ${kind} ${id} (new)`); continue; }
+    if (!a) { lines.push(`  - ${kind} ${id} (removed)`); continue; }
     const changes = [];
     if (JSON.stringify(b.rect) !== JSON.stringify(a.rect)) {
       changes.push(`rect ${JSON.stringify(b.rect)} -> ${JSON.stringify(a.rect)}`);
@@ -466,7 +681,7 @@ function diffSummary(before, after) {
         changes.push(`fixture ${dev} ${JSON.stringify(bfix[dev])} -> ${JSON.stringify(afix[dev])}`);
       }
     }
-    if (changes.length) lines.push(`  ~ room ${id}: ${changes.join('; ')}`);
+    if (changes.length) lines.push(`  ~ ${kind} ${id}: ${changes.join('; ')}`);
   }
   return lines.length ? `diff vs ${path.relative(ROOT, ROOMS_FILE)}:\n${lines.join('\n')}` : `diff vs ${path.relative(ROOT, ROOMS_FILE)}: no semantic changes`;
 }

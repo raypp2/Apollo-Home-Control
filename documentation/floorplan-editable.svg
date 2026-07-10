@@ -10,17 +10,30 @@
 
     Edit by MOVING/RESIZING elements. Do not rename ids or you'll break the
     mapping back to rooms.json. Layers (top-level <g id="...">):
-      guides    - locked reference outline, not imported
-      rooms     - one <rect id="room:<roomId>"> + label <text> per room
-      furniture - one <rect id="furn:<roomId>:<i>"> per item, optionally
-                  wrapped in <g transform="rotate(deg cx cy)"> when the
-                  item has a rot; kids are <rect id="furn:<roomId>:<i>:<k>">
-      fixtures  - one <circle id="fixture:<roomId>:<deviceId>"> + label per
-                  device dot
+      guides      - locked reference outline, not imported
+      rooms       - one <rect id="room:<roomId>"> + label <text> per room
+      decorations - one <rect id="decoration:<slug>"> per cosmetic-only
+                    entry (e.g. a closet outline), inkscape:label
+                    "closet:<rest>" / "decoration:<rest>" — never a room,
+                    never has furniture/fixtures
+      furniture   - one <rect id="furn:<roomId>:<i>"> per item, optionally
+                    wrapped in <g transform="rotate(deg cx cy)"> when the
+                    item has a rot; kids are <rect id="furn:<roomId>:<i>:<k>">
+      fixtures    - one <circle id="fixture:<roomId>:<deviceId>"> + label
+                    per device dot. A device with more than one position
+                    gets one circle per position: the first plain, the rest
+                    id-suffixed "-2", "-3", ... with inkscape:label
+                    "fixture:<roomId>:<deviceId>:<index>" (index 1 first).
 
     All positions are ABSOLUTE on the 470x980 canvas (rooms.json stores
     furniture/fixtures relative to their room's rect — this export bakes
     that offset in; the importer subtracts it back out).
+
+    ILLUSTRATOR NOTE: duplicating an element gives the duplicate a NEW id
+    (often the old id + a "-N" suffix) but keeps inkscape:label untouched.
+    The importer prefers inkscape:label over id for exactly this reason —
+    set/fix the label if you want a duplicated item's true identity to
+    survive an id Illustrator mangled.
 
     Fields the SVG geometry can't hold (complex CSS radius strings, rot,
     selectable, room label, links, non-simple furniture radii) are
@@ -45,12 +58,18 @@
     <text x="28" y="270" font-size="11" font-family="sans-serif" fill="#4a4460" style="pointer-events:none">BATH</text>
     <rect id="room:hall" x="130" y="368" width="73" height="338" data-label="HALL" data-selectable="true" class="room room--selectable" style="fill:rgba(234,229,239,0.06);stroke:#7a6ea0;stroke-width:1.5" />
     <text x="136" y="383" font-size="11" font-family="sans-serif" fill="#4a4460" style="pointer-events:none">HALL</text>
-    <rect id="room:office" x="272" y="443" width="196" height="182" data-label="OFFICE" data-selectable="true" class="room room--selectable" style="fill:rgba(234,229,239,0.06);stroke:#7a6ea0;stroke-width:1.5" />
-    <text x="278" y="458" font-size="11" font-family="sans-serif" fill="#4a4460" style="pointer-events:none">OFFICE</text>
-    <rect id="room:guest" x="40" y="670" width="105" height="295" data-label="GUEST" data-selectable="false" class="room room--fixed" style="fill:rgba(234,229,239,0.03);stroke:#a08e7a;stroke-width:1.5;stroke-dasharray:6 4" />
-    <text x="46" y="685" font-size="11" font-family="sans-serif" fill="#4a4460" style="pointer-events:none">GUEST</text>
+    <rect id="room:office" x="217.397" y="443.097" width="250.506" height="181.805" data-label="OFFICE" data-selectable="true" class="room room--selectable" style="fill:rgba(234,229,239,0.06);stroke:#7a6ea0;stroke-width:1.5" />
+    <text x="223.397" y="458.097" font-size="11" font-family="sans-serif" fill="#4a4460" style="pointer-events:none">OFFICE</text>
+    <rect id="room:guest" x="25.054" y="670.051" width="119.895" height="294.897" data-label="GUEST" data-selectable="false" class="room room--fixed" style="fill:rgba(234,229,239,0.03);stroke:#a08e7a;stroke-width:1.5;stroke-dasharray:6 4" />
+    <text x="31.054" y="685.051" font-size="11" font-family="sans-serif" fill="#4a4460" style="pointer-events:none">GUEST</text>
     <rect id="room:master" x="148" y="708" width="320" height="258" data-label="BEDROOM" data-selectable="true" class="room room--selectable" style="fill:rgba(234,229,239,0.06);stroke:#7a6ea0;stroke-width:1.5" />
     <text x="154" y="723" font-size="11" font-family="sans-serif" fill="#4a4460" style="pointer-events:none">BEDROOM</text>
+  </g>
+  <g id="decorations" inkscape:label="decorations" inkscape:groupmode="layer">
+    <rect id="decoration:closet-cleaning" x="203.084" y="443.474" width="69.256" height="56.483" inkscape:label="closet:cleaning" class="decoration" style="fill:rgba(160,142,122,0.05);stroke:#a08e7a;stroke-width:1;stroke-dasharray:3 3" />
+    <text x="209.084" y="458.474" font-size="8" font-family="sans-serif" fill="#4a4460" style="pointer-events:none">Cleaning</text>
+    <rect id="decoration:closet-coat" x="203.117" y="568.224" width="69.256" height="56.483" inkscape:label="closet:coat" class="decoration" style="fill:rgba(160,142,122,0.05);stroke:#a08e7a;stroke-width:1;stroke-dasharray:3 3" />
+    <text x="209.117" y="583.224" font-size="8" font-family="sans-serif" fill="#4a4460" style="pointer-events:none">Coat</text>
   </g>
   <g id="furniture" inkscape:label="furniture" inkscape:groupmode="layer">
       <rect id="furn:kitchen:0" x="40" y="55" width="40" height="150" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
@@ -62,18 +81,19 @@
       <rect id="furn:kitchen:2" x="146" y="173" width="42" height="42" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
       <rect id="furn:kitchen:2:0" x="157" y="184" width="20" height="20" rx="50%" ry="50%" data-r="50%" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
       <rect id="furn:dining:0" x="252" y="50" width="120" height="78" rx="4" ry="4" data-r="4px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:dining:1" x="284" y="31" width="26" height="14" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:dining:2" x="284" y="133" width="26" height="14" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:dining:3" x="230" y="75" width="14" height="26" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:dining:4" x="378" y="75" width="14" height="26" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:dining:5" x="432" y="41" width="20" height="106" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:dining:5:0" x="436" y="53" width="12" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:dining:5:1" x="436" y="73" width="12" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:dining:5:2" x="436" y="93" width="12" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:dining:5:3" x="436" y="113" width="12" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:dining:5:4" x="436" y="131" width="12" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:living:0" x="210" y="183" width="27" height="150" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:living:0:0" x="229" y="211" width="4" height="94" rx="2" ry="2" data-r="2px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:dining:1" x="276.605" y="30.388" width="26" height="14" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:dining:2" x="329.795" y="30.388" width="26" height="14" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:dining:3" x="276.605" y="134.066" width="26" height="14" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:dining:4" x="329.795" y="134.066" width="26" height="14" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:dining:5" x="421.447" y="117.621" width="25.668" height="25.177" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:dining:6" x="230" y="75" width="14" height="26" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:dining:7" x="378" y="75" width="14" height="26" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:dining:8" x="415.41" y="37.831" width="36.404" height="109.654" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:dining:8:0" x="436" y="53" width="12" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:dining:8:1" x="436" y="73" width="12" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:dining:8:2" x="436" y="93" width="12" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:living:0" x="210" y="197.207" width="27" height="150" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:living:0:0" x="229" y="225.207" width="4" height="94" rx="2" ry="2" data-r="2px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
       <rect id="furn:living:1" x="402" y="180" width="56" height="160" data-r="6px 6px 0 6px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
       <rect id="furn:living:1:0" x="444" y="184" width="11" height="152" rx="4" ry="4" data-r="4px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
       <rect id="furn:living:1:1" x="407" y="188" width="33" height="44" rx="4" ry="4" data-r="4px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
@@ -83,13 +103,9 @@
       <rect id="furn:living:2:0" x="336" y="326" width="66" height="10" rx="4" ry="4" data-r="4px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
       <rect id="furn:living:2:1" x="337" y="295" width="30" height="28" rx="4" ry="4" data-r="4px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
       <rect id="furn:living:2:2" x="369" y="295" width="30" height="28" rx="4" ry="4" data-r="4px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-    <g transform="rotate(-8 362 232)">
-      <rect id="furn:living:3" x="328" y="205" width="68" height="54" data-r="58% 42% 52% 48% / 48% 58% 42% 52%" data-rot="-8deg" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:living:3:0" x="343" y="218" width="38" height="28" data-r="58% 42% 52% 48% / 48% 58% 42% 52%" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-    </g>
-      <rect id="furn:living:4" x="424" y="355" width="33" height="80" rx="4" ry="4" data-r="4px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:living:4:0" x="429" y="361" width="23" height="50" rx="3" ry="3" data-r="3px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:living:4:1" x="429" y="415" width="23" height="14" rx="3" ry="3" data-r="3px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:living:3" x="424" y="355" width="33" height="80" rx="4" ry="4" data-r="4px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:living:3:0" x="429" y="361" width="23" height="50" rx="3" ry="3" data-r="3px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:living:3:1" x="429" y="415" width="23" height="14" rx="3" ry="3" data-r="3px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
       <rect id="furn:bath:0" x="30" y="277" width="30" height="78" rx="8" ry="8" data-r="8px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
       <rect id="furn:bath:0:0" x="35" y="283" width="20" height="58" rx="8" ry="8" data-r="8px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
       <rect id="furn:bath:0:1" x="40" y="345" width="10" height="6" rx="3" ry="3" data-r="3px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
@@ -98,61 +114,64 @@
       <rect id="furn:bath:2" x="127" y="260" width="38" height="18" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
       <rect id="furn:bath:2:0" x="132" y="264" width="11" height="11" rx="50%" ry="50%" data-r="50%" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
       <rect id="furn:bath:2:1" x="149" y="264" width="11" height="11" rx="50%" ry="50%" data-r="50%" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:hall:0" x="132" y="493" width="14" height="38" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:hall:0" x="184.289" y="506.141" width="13.811" height="54.479" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
       <rect id="furn:office:0" x="413" y="478" width="53" height="92" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
       <rect id="furn:office:0:0" x="418" y="504" width="7" height="40" rx="2" ry="2" data-r="2px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
       <rect id="furn:office:0:1" x="443" y="510" width="16" height="26" rx="2" ry="2" data-r="2px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:office:1" x="275" y="460" width="30" height="38" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:office:1:0" x="280" y="468" width="20" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:office:1:1" x="280" y="478" width="20" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:office:1:2" x="280" y="487" width="20" height="3" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:office:2" x="313" y="593" width="95" height="22" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:office:2:0" x="321" y="598" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:office:2:1" x="329" y="598" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:office:2:2" x="337" y="598" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:office:2:3" x="363" y="598" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:office:2:4" x="371" y="598" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:office:2:5" x="391" y="598" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:guest:0" x="45" y="850" width="85" height="105" rx="4" ry="4" data-r="4px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:guest:0:0" x="53" y="924" width="32" height="22" rx="5" ry="5" data-r="5px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:guest:0:1" x="91" y="924" width="32" height="22" rx="5" ry="5" data-r="5px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:guest:0:2" x="49" y="856" width="77" height="60" rx="3" ry="3" data-r="3px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:master:0" x="238" y="770" width="98" height="180" rx="5" ry="5" data-r="5px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:office:1" x="226.28" y="508.246" width="40" height="50.667" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:office:1:0" x="232.947" y="518.913" width="26.667" height="4" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:office:1:1" x="232.947" y="532.246" width="26.667" height="4" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:office:1:2" x="232.947" y="544.246" width="26.667" height="4" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:office:2" x="324.476" y="595.324" width="135.668" height="21.81" rx="2" ry="2" data-r="2px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:office:2:0" x="336.918" y="600.229" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:office:2:1" x="344.918" y="600.229" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:office:2:2" x="352.918" y="600.229" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:office:2:3" x="433.097" y="600.532" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:office:2:4" x="441.097" y="600.532" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:office:2:5" x="448.99" y="600.229" width="3" height="12" rx="1" ry="1" data-r="1px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:guest:0" x="35" y="850" width="85" height="105" rx="4" ry="4" data-r="4px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:guest:0:0" x="43" y="924" width="32" height="22" rx="5" ry="5" data-r="5px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:guest:0:1" x="81" y="924" width="32" height="22" rx="5" ry="5" data-r="5px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:guest:0:2" x="39" y="856" width="77" height="60" rx="3" ry="3" data-r="3px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:master:0" x="237.984" y="781.622" width="98.033" height="168.394" rx="5" ry="5" data-r="5px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
       <rect id="furn:master:0:0" x="247" y="918" width="38" height="24" rx="5" ry="5" data-r="5px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
       <rect id="furn:master:0:1" x="290" y="918" width="38" height="24" rx="5" ry="5" data-r="5px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:master:0:2" x="243" y="776" width="88" height="108" rx="4" ry="4" data-r="4px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
-      <rect id="furn:master:1" x="204" y="914" width="28" height="28" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
-      <rect id="furn:master:2" x="342" y="914" width="28" height="28" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:master:0:2" x="243" y="787.153" width="88" height="108" rx="4" ry="4" data-r="4px" class="furn-kid" style="fill:rgba(120,170,220,0.32);stroke:#3d6ea5;stroke-width:0.75" />
+      <rect id="furn:master:1" x="238.027" y="752.439" width="98.637" height="23.514" rx="5" ry="5" data-r="5px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:master:2" x="204" y="914" width="28" height="28" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:master:3" x="342" y="914" width="28" height="28" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
+      <rect id="furn:master:4" x="434.1" y="790.64" width="27" height="116.157" rx="3" ry="3" data-r="3px" class="furn" style="fill:rgba(120,170,220,0.18);stroke:#3d6ea5;stroke-width:1" />
   </g>
   <g id="fixtures" inkscape:label="fixtures" inkscape:groupmode="layer">
     <circle id="fixture:kitchen:kitchen" cx="118" cy="119" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
     <text x="126" y="122" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">kitchen</text>
     <circle id="fixture:dining:diningRoom" cx="312" cy="89" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
     <text x="320" y="92" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">diningRoom</text>
-    <circle id="fixture:living:livingRoomBookshelf" cx="224" cy="345" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="232" y="348" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">livingRoomBookshelf</text>
-    <circle id="fixture:living:livingRoomCouch" cx="416" cy="263" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="424" y="266" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">livingRoomCouch</text>
-    <circle id="fixture:living:giantP" cx="440" cy="405" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="448" y="408" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">giantP</text>
-    <circle id="fixture:living:led-art-wall" cx="322" cy="185" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="330" y="188" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">led-art-wall</text>
-    <circle id="fixture:living:accent" cx="364" cy="305" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="372" y="308" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">accent</text>
-    <circle id="fixture:hall:hall" cx="166" cy="538" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="174" y="541" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">hall</text>
-    <circle id="fixture:office:officeDesk" cx="439" cy="523" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="447" y="526" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">officeDesk</text>
-    <circle id="fixture:office:officeWall" cx="284" cy="533" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="292" y="536" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">officeWall</text>
-    <circle id="fixture:office:office-bookshelf" cx="360" cy="604" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="368" y="607" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">office-bookshelf</text>
-    <circle id="fixture:office:webcam" cx="392" cy="473" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="400" y="476" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">webcam</text>
-    <circle id="fixture:office:hair-light" cx="342" cy="473" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="350" y="476" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">hair-light</text>
-    <circle id="fixture:master:bedroomColor" cx="287" cy="858" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
-    <text x="295" y="861" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">bedroomColor</text>
+    <circle id="fixture:living:livingRoomBookshelf" cx="246.807" cy="273.963" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="254.807" y="276.963" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">livingRoomBookshelf</text>
+    <circle id="fixture:living:livingRoomCouch" cx="424.599" cy="258.513" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="432.599" y="261.513" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">livingRoomCouch</text>
+    <circle id="fixture:living:giantP" cx="455.329" cy="347.796" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="463.329" y="350.796" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">giantP</text>
+    <circle id="fixture:living:led-art-wall" cx="460.197" cy="258.897" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="468.197" y="261.897" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">led-art-wall</text>
+    <circle id="fixture:living:accent" cx="452.61" cy="430.998" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="460.61" y="433.998" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">accent</text>
+    <circle id="fixture:hall:hall" cx="166" cy="531.48" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="174" y="534.48" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">hall</text>
+    <circle id="fixture:office:officeDesk" cx="433.882" cy="523" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="441.882" y="526" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">officeDesk</text>
+    <circle id="fixture:office:officeWall" cx="287.298" cy="532.034" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="295.298" y="535.034" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">officeWall</text>
+    <circle id="fixture:office:office-bookshelf" cx="393.691" cy="606.097" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="401.691" y="609.097" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">office-bookshelf</text>
+    <circle id="fixture:office:webcam" cx="452.459" cy="579.842" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="460.459" y="582.842" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">webcam</text>
+    <circle id="fixture:office:hair-light" cx="262.988" cy="454.446" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />
+    <text x="270.988" y="457.446" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">hair-light</text>
+    <circle id="fixture:master:bedroomColor" cx="448.128" cy="920.58" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" inkscape:label="fixture:master:bedroomColor:1" />
+    <text x="456.128" y="923.58" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">bedroomColor</text>
+    <circle id="fixture:master:bedroomColor-2" cx="448.168" cy="775.015" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" inkscape:label="fixture:master:bedroomColor:2" />
   </g>
-  <metadata id="apollo-rooms-source"><![CDATA[[{"id":"kitchen","label":"KITCHEN","selectable":true,"rect":{"x":38,"y":15,"w":162,"h":208},"furniture":[{"x":2,"y":40,"w":40,"h":150,"r":"2px","kids":[{"x":6,"y":48,"w":9,"h":9,"r":"50%"},{"x":20,"y":48,"w":9,"h":9,"r":"50%"},{"x":6,"y":62,"w":9,"h":9,"r":"50%"},{"x":20,"y":62,"w":9,"h":9,"r":"50%"}]},{"x":108,"y":3,"w":52,"h":100,"r":"2px"},{"x":108,"y":158,"w":42,"h":42,"r":"2px","kids":[{"x":11,"y":11,"w":20,"h":20,"r":"50%"}]}],"fixtures":{"kitchen":{"x":80,"y":104}}},{"id":"dining","label":"DINING","selectable":true,"rect":{"x":200,"y":15,"w":258,"h":160},"furniture":[{"x":52,"y":35,"w":120,"h":78,"r":"4px"},{"x":84,"y":16,"w":26,"h":14,"r":"3px"},{"x":84,"y":118,"w":26,"h":14,"r":"3px"},{"x":30,"y":60,"w":14,"h":26,"r":"3px"},{"x":178,"y":60,"w":14,"h":26,"r":"3px"},{"x":232,"y":26,"w":20,"h":106,"r":"2px","kids":[{"x":4,"y":12,"w":12,"h":3,"r":"1px"},{"x":4,"y":32,"w":12,"h":3,"r":"1px"},{"x":4,"y":52,"w":12,"h":3,"r":"1px"},{"x":4,"y":72,"w":12,"h":3,"r":"1px"},{"x":4,"y":90,"w":12,"h":3,"r":"1px"}]}],"fixtures":{"diningRoom":{"x":112,"y":74}}},{"id":"living","label":"LIVING","selectable":true,"rect":{"x":202,"y":175,"w":266,"h":268},"furniture":[{"x":8,"y":8,"w":27,"h":150,"r":"2px","kids":[{"x":19,"y":28,"w":4,"h":94,"r":"2px"}]},{"x":200,"y":5,"w":56,"h":160,"r":"6px 6px 0 6px","kids":[{"x":42,"y":4,"w":11,"h":152,"r":"4px"},{"x":5,"y":8,"w":33,"h":44,"r":"4px"},{"x":5,"y":56,"w":33,"h":44,"r":"4px"},{"x":5,"y":104,"w":33,"h":44,"r":"4px"}]},{"x":130,"y":115,"w":72,"h":50,"r":"6px 0 0 6px","kids":[{"x":4,"y":36,"w":66,"h":10,"r":"4px"},{"x":5,"y":5,"w":30,"h":28,"r":"4px"},{"x":37,"y":5,"w":30,"h":28,"r":"4px"}]},{"x":126,"y":30,"w":68,"h":54,"r":"58% 42% 52% 48% / 48% 58% 42% 52%","rot":"-8deg","kids":[{"x":15,"y":13,"w":38,"h":28,"r":"58% 42% 52% 48% / 48% 58% 42% 52%"}]},{"x":222,"y":180,"w":33,"h":80,"r":"4px","kids":[{"x":5,"y":6,"w":23,"h":50,"r":"3px"},{"x":5,"y":60,"w":23,"h":14,"r":"3px"}]}],"fixtures":{"livingRoomBookshelf":{"x":22,"y":170},"livingRoomCouch":{"x":214,"y":88},"giantP":{"x":238,"y":230},"led-art-wall":{"x":120,"y":10},"accent":{"x":162,"y":130}},"links":["plex","jellyfin"]},{"id":"bath","label":"BATH","selectable":false,"rect":{"x":22,"y":255,"w":158,"h":113},"furniture":[{"x":8,"y":22,"w":30,"h":78,"r":"8px","kids":[{"x":5,"y":6,"w":20,"h":58,"r":"8px"},{"x":10,"y":68,"w":10,"h":6,"r":"3px"}]},{"x":53,"y":8,"w":25,"h":38,"r":"4px","kids":[{"x":3,"y":12,"w":19,"h":22,"r":"50%"}]},{"x":105,"y":5,"w":38,"h":18,"r":"2px","kids":[{"x":5,"y":4,"w":11,"h":11,"r":"50%"},{"x":22,"y":4,"w":11,"h":11,"r":"50%"}]}],"fixtures":{}},{"id":"hall","label":"HALL","selectable":true,"rect":{"x":130,"y":368,"w":73,"h":338},"furniture":[{"x":2,"y":125,"w":14,"h":38,"r":"2px"}],"fixtures":{"hall":{"x":36,"y":170}}},{"id":"office","label":"OFFICE","selectable":true,"rect":{"x":272,"y":443,"w":196,"h":182},"furniture":[{"x":141,"y":35,"w":53,"h":92,"r":"3px","kids":[{"x":5,"y":26,"w":7,"h":40,"r":"2px"},{"x":30,"y":32,"w":16,"h":26,"r":"2px"}]},{"x":3,"y":17,"w":30,"h":38,"r":"2px","kids":[{"x":5,"y":8,"w":20,"h":3,"r":"1px"},{"x":5,"y":18,"w":20,"h":3,"r":"1px"},{"x":5,"y":27,"w":20,"h":3,"r":"1px"}]},{"x":41,"y":150,"w":95,"h":22,"r":"2px","kids":[{"x":8,"y":5,"w":3,"h":12,"r":"1px"},{"x":16,"y":5,"w":3,"h":12,"r":"1px"},{"x":24,"y":5,"w":3,"h":12,"r":"1px"},{"x":50,"y":5,"w":3,"h":12,"r":"1px"},{"x":58,"y":5,"w":3,"h":12,"r":"1px"},{"x":78,"y":5,"w":3,"h":12,"r":"1px"}]}],"fixtures":{"officeDesk":{"x":167,"y":80},"officeWall":{"x":12,"y":90},"office-bookshelf":{"x":88,"y":161},"webcam":{"x":120,"y":30},"hair-light":{"x":70,"y":30}}},{"id":"guest","label":"GUEST","selectable":false,"rect":{"x":40,"y":670,"w":105,"h":295},"furniture":[{"x":5,"y":180,"w":85,"h":105,"r":"4px","kids":[{"x":8,"y":74,"w":32,"h":22,"r":"5px"},{"x":46,"y":74,"w":32,"h":22,"r":"5px"},{"x":4,"y":6,"w":77,"h":60,"r":"3px"}]}],"fixtures":{}},{"id":"master","label":"BEDROOM","selectable":true,"rect":{"x":148,"y":708,"w":320,"h":258},"furniture":[{"x":90,"y":62,"w":98,"h":180,"r":"5px","kids":[{"x":9,"y":148,"w":38,"h":24,"r":"5px"},{"x":52,"y":148,"w":38,"h":24,"r":"5px"},{"x":5,"y":6,"w":88,"h":108,"r":"4px"}]},{"x":56,"y":206,"w":28,"h":28,"r":"3px"},{"x":194,"y":206,"w":28,"h":28,"r":"3px"}],"fixtures":{"bedroomColor":{"x":139,"y":150}}}]]]></metadata>
+  <metadata id="apollo-rooms-source"><![CDATA[[{"id":"kitchen","label":"KITCHEN","selectable":true,"rect":{"x":38,"y":15,"w":162,"h":208},"furniture":[{"x":2,"y":40,"w":40,"h":150,"r":"2px","kids":[{"x":6,"y":48,"w":9,"h":9,"r":"50%"},{"x":20,"y":48,"w":9,"h":9,"r":"50%"},{"x":6,"y":62,"w":9,"h":9,"r":"50%"},{"x":20,"y":62,"w":9,"h":9,"r":"50%"}]},{"x":108,"y":3,"w":52,"h":100,"r":"2px"},{"x":108,"y":158,"w":42,"h":42,"r":"2px","kids":[{"x":11,"y":11,"w":20,"h":20,"r":"50%"}]}],"fixtures":{"kitchen":{"x":80,"y":104}}},{"id":"dining","label":"DINING","selectable":true,"rect":{"x":200,"y":15,"w":258,"h":160},"furniture":[{"x":52,"y":35,"w":120,"h":78,"r":"4px"},{"x":76.605,"y":15.388,"w":26,"h":14,"r":"3px"},{"x":129.795,"y":15.388,"w":26,"h":14,"r":"3px"},{"x":76.605,"y":119.066,"w":26,"h":14,"r":"3px"},{"x":129.795,"y":119.066,"w":26,"h":14,"r":"3px"},{"x":221.447,"y":102.621,"w":25.668,"h":25.177,"r":"3px"},{"x":30,"y":60,"w":14,"h":26,"r":"3px"},{"x":178,"y":60,"w":14,"h":26,"r":"3px"},{"x":215.41,"y":22.831,"w":36.404,"h":109.654,"r":"2px","kids":[{"x":20.59,"y":15.169,"w":12,"h":3,"r":"1px"},{"x":20.59,"y":35.169,"w":12,"h":3,"r":"1px"},{"x":20.59,"y":55.169,"w":12,"h":3,"r":"1px"}]}],"fixtures":{"diningRoom":{"x":112,"y":74}}},{"id":"living","label":"LIVING","selectable":true,"rect":{"x":202,"y":175,"w":266,"h":268},"furniture":[{"x":8,"y":22.207,"w":27,"h":150,"r":"2px","kids":[{"x":19,"y":28,"w":4,"h":94,"r":"2px"}]},{"x":200,"y":5,"w":56,"h":160,"r":"6px 6px 0 6px","kids":[{"x":42,"y":4,"w":11,"h":152,"r":"4px"},{"x":5,"y":8,"w":33,"h":44,"r":"4px"},{"x":5,"y":56,"w":33,"h":44,"r":"4px"},{"x":5,"y":104,"w":33,"h":44,"r":"4px"}]},{"x":130,"y":115,"w":72,"h":50,"r":"6px 0 0 6px","kids":[{"x":4,"y":36,"w":66,"h":10,"r":"4px"},{"x":5,"y":5,"w":30,"h":28,"r":"4px"},{"x":37,"y":5,"w":30,"h":28,"r":"4px"}]},{"x":222,"y":180,"w":33,"h":80,"r":"4px","kids":[{"x":5,"y":6,"w":23,"h":50,"r":"3px"},{"x":5,"y":60,"w":23,"h":14,"r":"3px"}]}],"fixtures":{"livingRoomBookshelf":{"x":44.807,"y":98.963},"livingRoomCouch":{"x":222.599,"y":83.513},"giantP":{"x":253.329,"y":172.796},"led-art-wall":{"x":258.197,"y":83.897},"accent":{"x":250.61,"y":255.998}},"links":["plex","jellyfin"]},{"id":"bath","label":"BATH","selectable":false,"rect":{"x":22,"y":255,"w":158,"h":113},"furniture":[{"x":8,"y":22,"w":30,"h":78,"r":"8px","kids":[{"x":5,"y":6,"w":20,"h":58,"r":"8px"},{"x":10,"y":68,"w":10,"h":6,"r":"3px"}]},{"x":53,"y":8,"w":25,"h":38,"r":"4px","kids":[{"x":3,"y":12,"w":19,"h":22,"r":"50%"}]},{"x":105,"y":5,"w":38,"h":18,"r":"2px","kids":[{"x":5,"y":4,"w":11,"h":11,"r":"50%"},{"x":22,"y":4,"w":11,"h":11,"r":"50%"}]}],"fixtures":{}},{"id":"hall","label":"HALL","selectable":true,"rect":{"x":130,"y":368,"w":73,"h":338},"furniture":[{"x":54.289,"y":138.141,"w":13.811,"h":54.479,"r":"2px"}],"fixtures":{"hall":{"x":36,"y":163.48}}},{"id":"office","label":"OFFICE","selectable":true,"rect":{"x":217.397,"y":443.097,"w":250.506,"h":181.805},"furniture":[{"x":195.603,"y":34.903,"w":53,"h":92,"r":"3px","kids":[{"x":5,"y":26,"w":7,"h":40,"r":"2px"},{"x":30,"y":32,"w":16,"h":26,"r":"2px"}]},{"x":8.883,"y":65.149,"w":40,"h":50.667,"r":"2px","kids":[{"x":6.667,"y":10.667,"w":26.667,"h":4,"r":"1px"},{"x":6.667,"y":24,"w":26.667,"h":4,"r":"1px"},{"x":6.667,"y":36,"w":26.667,"h":4,"r":"1px"}]},{"x":107.079,"y":152.227,"w":135.668,"h":21.81,"r":"2px","kids":[{"x":12.442,"y":4.905,"w":3,"h":12,"r":"1px"},{"x":20.442,"y":4.905,"w":3,"h":12,"r":"1px"},{"x":28.442,"y":4.905,"w":3,"h":12,"r":"1px"},{"x":108.621,"y":5.208,"w":3,"h":12,"r":"1px"},{"x":116.621,"y":5.208,"w":3,"h":12,"r":"1px"},{"x":124.514,"y":4.905,"w":3,"h":12,"r":"1px"}]}],"fixtures":{"officeDesk":{"x":216.485,"y":79.903},"officeWall":{"x":69.901,"y":88.937},"office-bookshelf":{"x":176.294,"y":163},"webcam":{"x":235.062,"y":136.745},"hair-light":{"x":45.591,"y":11.349}}},{"id":"guest","label":"GUEST","selectable":false,"rect":{"x":25.054,"y":670.051,"w":119.895,"h":294.897},"furniture":[{"x":9.946,"y":179.949,"w":85,"h":105,"r":"4px","kids":[{"x":8,"y":74,"w":32,"h":22,"r":"5px"},{"x":46,"y":74,"w":32,"h":22,"r":"5px"},{"x":4,"y":6,"w":77,"h":60,"r":"3px"}]}],"fixtures":{}},{"id":"master","label":"BEDROOM","selectable":true,"rect":{"x":148,"y":708,"w":320,"h":258},"furniture":[{"x":89.984,"y":73.622,"w":98.033,"h":168.394,"r":"5px","kids":[{"x":9.016,"y":136.378,"w":38,"h":24,"r":"5px"},{"x":52.016,"y":136.378,"w":38,"h":24,"r":"5px"},{"x":5.016,"y":5.531,"w":88,"h":108,"r":"4px"}]},{"x":90.027,"y":44.439,"w":98.637,"h":23.514,"r":"5px"},{"x":56,"y":206,"w":28,"h":28,"r":"3px"},{"x":194,"y":206,"w":28,"h":28,"r":"3px"},{"x":286.1,"y":82.64,"w":27,"h":116.157,"r":"3px"}],"fixtures":{"bedroomColor":[{"x":300.128,"y":212.58},{"x":300.168,"y":67.015}]}},{"id":"closet-cleaning","label":"Cleaning","decorative":true,"rect":{"x":203.084,"y":443.474,"w":69.256,"h":56.483}},{"id":"closet-coat","label":"Coat","decorative":true,"rect":{"x":203.117,"y":568.224,"w":69.256,"h":56.483}}]]]></metadata>
 </svg>

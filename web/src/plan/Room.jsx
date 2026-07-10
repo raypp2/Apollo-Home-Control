@@ -11,6 +11,22 @@ import Furniture from './Furniture.jsx';
 import Fixture from './Fixture.jsx';
 
 /**
+ * A fixture's value in room.fixtures is either a single {x,y} or an array of
+ * them (e.g. the primary bedroom's "bedroomColor", which gets a dot on each
+ * nightstand lamp but both dots reflect/control the one device). Flatten
+ * room.fixtures into one dot per position, all bound to the same deviceId,
+ * with stable per-position keys.
+ * @param {object} fixtures
+ * @returns {Array<{ deviceId: string, pos: {x:number,y:number}, key: string }>}
+ */
+function flattenFixtures(fixtures) {
+  return Object.entries(fixtures || {}).flatMap(([deviceId, value]) => {
+    const positions = Array.isArray(value) ? value : [value];
+    return positions.map((pos, i) => ({ deviceId, pos, key: `${deviceId}-${i}` }));
+  });
+}
+
+/**
  * @param {{ room: object }} props
  */
 export default function Room({ room }) {
@@ -48,8 +64,8 @@ export default function Room({ room }) {
         <Furniture key={i} item={item} />
       ))}
 
-      {Object.entries(room.fixtures || {}).map(([deviceId, pos]) => (
-        <Fixture key={deviceId} deviceId={deviceId} pos={pos} room={room} />
+      {flattenFixtures(room.fixtures).map(({ deviceId, pos, key }) => (
+        <Fixture key={key} deviceId={deviceId} pos={pos} room={room} />
       ))}
 
       <div class="plan-room__label">{room.label}</div>

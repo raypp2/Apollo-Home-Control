@@ -20,7 +20,22 @@
 //                                    position; kid coords in rooms.json are
 //                                    relative to the PARENT FURNITURE item,
 //                                    not the room — see Furniture.jsx)
-//   fixture:<roomId>:<deviceId>    — fixture dot (absolute position)
+//   fixture:<roomId>:<deviceId>    — fixture dot (absolute position). A
+//                                    device with more than one position
+//                                    (rooms.json fixtures[device] is an
+//                                    array) emits one <circle> per position:
+//                                    the first is plain "fixture:room:device"
+//                                    with inkscape:label "...:1", the rest
+//                                    get a "-2", "-3", ... id suffix and a
+//                                    matching ":2", ":3", ... label.
+//   decoration:<slug>              — a cosmetic-only rect (rooms.json entry
+//                                    with decorative:true, e.g. a closet
+//                                    outline), in its own "decorations"
+//                                    layer. inkscape:label is set to
+//                                    "closet:<rest>" / "decoration:<rest>"
+//                                    (the slug with its first "-" turned
+//                                    back into ":"), which is what the
+//                                    importer actually keys off of.
 //
 // LOSSLESSNESS: SVG rect/circle geometry only carries x/y/w/h. Fields the
 // data model has that SVG doesn't (complex CSS radius strings, `rot`,
@@ -162,17 +177,30 @@ function main() {
 
     Edit by MOVING/RESIZING elements. Do not rename ids or you'll break the
     mapping back to rooms.json. Layers (top-level <g id="...">):
-      guides    - locked reference outline, not imported
-      rooms     - one <rect id="room:<roomId>"> + label <text> per room
-      furniture - one <rect id="furn:<roomId>:<i>"> per item, optionally
-                  wrapped in <g transform="rotate(deg cx cy)"> when the
-                  item has a rot; kids are <rect id="furn:<roomId>:<i>:<k>">
-      fixtures  - one <circle id="fixture:<roomId>:<deviceId>"> + label per
-                  device dot
+      guides      - locked reference outline, not imported
+      rooms       - one <rect id="room:<roomId>"> + label <text> per room
+      decorations - one <rect id="decoration:<slug>"> per cosmetic-only
+                    entry (e.g. a closet outline), inkscape:label
+                    "closet:<rest>" / "decoration:<rest>" — never a room,
+                    never has furniture/fixtures
+      furniture   - one <rect id="furn:<roomId>:<i>"> per item, optionally
+                    wrapped in <g transform="rotate(deg cx cy)"> when the
+                    item has a rot; kids are <rect id="furn:<roomId>:<i>:<k>">
+      fixtures    - one <circle id="fixture:<roomId>:<deviceId>"> + label
+                    per device dot. A device with more than one position
+                    gets one circle per position: the first plain, the rest
+                    id-suffixed "-2", "-3", ... with inkscape:label
+                    "fixture:<roomId>:<deviceId>:<index>" (index 1 first).
 
     All positions are ABSOLUTE on the 470x980 canvas (rooms.json stores
     furniture/fixtures relative to their room's rect — this export bakes
     that offset in; the importer subtracts it back out).
+
+    ILLUSTRATOR NOTE: duplicating an element gives the duplicate a NEW id
+    (often the old id + a "-N" suffix) but keeps inkscape:label untouched.
+    The importer prefers inkscape:label over id for exactly this reason —
+    set/fix the label if you want a duplicated item's true identity to
+    survive an id Illustrator mangled.
 
     Fields the SVG geometry can't hold (complex CSS radius strings, rot,
     selectable, room label, links, non-simple furniture radii) are
@@ -189,9 +217,10 @@ function main() {
   lines.push(`    <rect id="plane-bounds" x="0" y="0" width="${PLANE_W}" height="${PLANE_H}" fill="none" stroke="#999999" stroke-width="1" stroke-dasharray="4 3" />`);
   lines.push(`  </g>`);
 
-  // --- rooms layer ---
+  // --- rooms layer (decorations render in their own layer below) ---
   lines.push(`  <g id="rooms" inkscape:label="rooms" inkscape:groupmode="layer">`);
   for (const room of rooms) {
+    if (room.decorative) continue;
     const { id, label, selectable, rect, links } = room;
     if (!rect) continue;
     const isSelectable = selectable !== false;
@@ -214,9 +243,29 @@ function main() {
   }
   lines.push(`  </g>`);
 
+  // --- decorations layer: cosmetic-only entries (rooms.json decorative:true) ---
+  // Never a room, never has furniture/fixtures. inkscape:label carries the
+  // real identity (e.g. "closet:cleaning") — that's what the importer keys
+  // off of, not this rect's id, since Illustrator id-mangles duplicates.
+  lines.push(`  <g id="decorations" inkscape:label="decorations" inkscape:groupmode="layer">`);
+  for (const room of rooms) {
+    if (!room.decorative || !room.rect) continue;
+    const { id, label, rect } = room;
+    const decLabel = id.replace(/-/, ':');
+    const attrs = rectAttrs({
+      x: rect.x, y: rect.y, w: rect.w, h: rect.h,
+      id: `decoration:${id}`,
+      extraAttrs: `inkscape:label="${esc(decLabel)}" class="decoration" style="fill:rgba(160,142,122,0.05);stroke:#a08e7a;stroke-width:1;stroke-dasharray:3 3"`,
+    });
+    lines.push(`    <rect ${attrs} />`);
+    lines.push(`    <text x="${num(rect.x + 6)}" y="${num(rect.y + 15)}" font-size="8" font-family="sans-serif" fill="#4a4460" style="pointer-events:none">${esc(label || id)}</text>`);
+  }
+  lines.push(`  </g>`);
+
   // --- furniture layer ---
   lines.push(`  <g id="furniture" inkscape:label="furniture" inkscape:groupmode="layer">`);
   for (const room of rooms) {
+    if (room.decorative) continue;
     const { id: roomId, rect } = room;
     if (!rect || !Array.isArray(room.furniture)) continue;
     room.furniture.forEach((item, idx) => {
@@ -244,17 +293,32 @@ function main() {
   lines.push(`  </g>`);
 
   // --- fixtures layer ---
+  // A device with more than one position (rooms.json fixtures[device] is an
+  // array) becomes multiple <circle>s: the first plain id, the rest
+  // "-2"/"-3"/... suffixed (Illustrator's own dup-id convention), all
+  // carrying an inkscape:label "fixture:room:device:<index>" (1-based) so
+  // the importer can tell them apart and re-order them regardless of what
+  // an editor does to the ids.
   lines.push(`  <g id="fixtures" inkscape:label="fixtures" inkscape:groupmode="layer">`);
   for (const room of rooms) {
+    if (room.decorative) continue;
     const { id: roomId, rect } = room;
     if (!rect || !room.fixtures) continue;
-    for (const [deviceId, pos] of Object.entries(room.fixtures)) {
-      if (!pos) continue;
-      const cx = rect.x + pos.x;
-      const cy = rect.y + pos.y;
-      const id = `fixture:${roomId}:${deviceId}`;
-      lines.push(`    <circle id="${esc(id)}" cx="${num(cx)}" cy="${num(cy)}" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1" />`);
-      lines.push(`    <text x="${num(cx + 8)}" y="${num(cy + 3)}" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">${esc(deviceId)}</text>`);
+    for (const [deviceId, posOrArr] of Object.entries(room.fixtures)) {
+      if (!posOrArr) continue;
+      const positions = Array.isArray(posOrArr) ? posOrArr : [posOrArr];
+      positions.forEach((pos, i) => {
+        if (!pos) return;
+        const n = i + 1;
+        const cx = rect.x + pos.x;
+        const cy = rect.y + pos.y;
+        const id = n === 1 ? `fixture:${roomId}:${deviceId}` : `fixture:${roomId}:${deviceId}-${n}`;
+        const labelAttr = positions.length > 1 ? ` inkscape:label="fixture:${esc(roomId)}:${esc(deviceId)}:${n}"` : '';
+        lines.push(`    <circle id="${esc(id)}" cx="${num(cx)}" cy="${num(cy)}" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1"${labelAttr} />`);
+        if (n === 1) {
+          lines.push(`    <text x="${num(cx + 8)}" y="${num(cy + 3)}" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">${esc(deviceId)}</text>`);
+        }
+      });
     }
   }
   lines.push(`  </g>`);
@@ -268,7 +332,9 @@ function main() {
 
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
   fs.writeFileSync(OUT_FILE, lines.join('\n'), 'utf8');
-  process.stdout.write(`floorplan-export: wrote ${path.relative(ROOT, OUT_FILE)} (${rooms.length} rooms)\n`);
+  const roomCount = rooms.filter((r) => !r.decorative).length;
+  const decCount = rooms.filter((r) => r.decorative).length;
+  process.stdout.write(`floorplan-export: wrote ${path.relative(ROOT, OUT_FILE)} (${roomCount} rooms, ${decCount} decorations)\n`);
 }
 
 main();

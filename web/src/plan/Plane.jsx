@@ -9,6 +9,7 @@
 
 import { store, ui } from '../state/index.js';
 import Room from './Room.jsx';
+import Decoration from './Decoration.jsx';
 import AcVent from './AcVent.jsx';
 import './plan.css';
 
@@ -43,7 +44,9 @@ function innerTransform(room) {
 }
 
 export default function Plane() {
-  const rooms = store.rooms.value;
+  const entries = store.rooms.value;
+  const rooms = entries.filter((entry) => !entry.decorative);
+  const decorations = entries.filter((entry) => entry.decorative);
   const selectedId = ui.selectedRoom.value;
   const selectedRoom = selectedId ? rooms.find((r) => r.id === selectedId) || null : null;
 
@@ -55,6 +58,9 @@ export default function Plane() {
         <div class="plan-inner" style={{ transform: innerTransform(selectedRoom) }}>
           {rooms.map((room) => (
             <Room key={room.id} room={room} />
+          ))}
+          {decorations.map((decoration) => (
+            <Decoration key={decoration.id} decoration={decoration} />
           ))}
           <AcVent />
         </div>
