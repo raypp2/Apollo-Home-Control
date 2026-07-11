@@ -252,12 +252,18 @@ function readMetadataFallback(svgRaw) {
 
 function metadataLookup(fallbackRooms) {
   const roomsById = new Map();
-  if (!fallbackRooms) return { room: () => null, furniture: () => null, kid: () => null };
+  if (!fallbackRooms) return { room: () => null, furniture: () => null, kid: () => null, fixture: () => null };
   for (const r of fallbackRooms) roomsById.set(r.id, r);
   return {
     room: (roomId) => roomsById.get(roomId) || null,
     furniture: (roomId, idx) => roomsById.get(roomId)?.furniture?.[idx] || null,
     kid: (roomId, idx, kidIdx) => roomsById.get(roomId)?.furniture?.[idx]?.kids?.[kidIdx] || null,
+    fixture: (roomId, deviceId, idx) => {
+      const v = roomsById.get(roomId)?.fixtures?.[deviceId];
+      if (!v) return null;
+      const arr = Array.isArray(v) ? v : [v];
+      return arr[idx] || null;
+    },
   };
 }
 
@@ -616,7 +622,20 @@ function main() {
             const bi = b.index == null ? 0 : b.index;
             return ai - bi;
           });
-          const rel = sorted.map((p) => ({ x: round(p.x - room.rect.x), y: round(p.y - room.rect.y) }));
+          // The SVG circle only carries position; emission metadata (aim,
+          // spread, ...) lives in rooms.json and rides through the export's
+          // embedded metadata blob -- merge those extra fields back so an
+          // Illustrator round-trip doesn't strip them.
+          const rel = sorted.map((p, i) => {
+            const out = { x: round(p.x - room.rect.x), y: round(p.y - room.rect.y) };
+            const fb = lookup.fixture(room.id, deviceId, i);
+            if (fb) {
+              for (const [k, v] of Object.entries(fb)) {
+                if (k !== 'x' && k !== 'y') out[k] = v;
+              }
+            }
+            return out;
+          });
           fixtures[deviceId] = rel.length > 1 ? rel : rel[0];
         }
       }

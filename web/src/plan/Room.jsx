@@ -9,6 +9,7 @@
 import { store, ui, commands } from '../state/index.js';
 import Furniture from './Furniture.jsx';
 import Fixture from './Fixture.jsx';
+import GlowLayer from './GlowLayer.jsx';
 
 /**
  * A fixture's value in room.fixtures is either a single {x,y} or an array of
@@ -33,9 +34,17 @@ export default function Room({ room }) {
   const selectable = room.selectable !== false;
   const selected = ui.selectedRoom.value === room.id;
 
+  // Fixture positions carrying an `aim` render their own directional glow
+  // via GlowLayer; their devices are excluded from the centered room wash so
+  // the two effects don't double up.
+  const flat = flattenFixtures(room.fixtures);
+  const aimedFixtures = flat.filter((f) => f.pos.aim != null);
+  const aimedDeviceIds = new Set(aimedFixtures.map((f) => f.deviceId));
+
   const entries = store.devicesInRoom(room.id);
   let lightsOn = 0;
   for (const entry of entries) {
+    if (aimedDeviceIds.has(entry.id)) continue;
     if (commands.deviceView(entry).on) lightsOn += 1;
   }
   const glowOpacity = lightsOn > 0 ? Math.min(0.25 + lightsOn * 0.13, 0.8) : 0;
@@ -60,11 +69,15 @@ export default function Room({ room }) {
         <div class="plan-room__glow" style={{ opacity: glowOpacity }} />
       )}
 
+      {aimedFixtures.length > 0 && (
+        <GlowLayer room={room} fixtures={aimedFixtures} />
+      )}
+
       {(room.furniture || []).map((item, i) => (
         <Furniture key={i} item={item} />
       ))}
 
-      {flattenFixtures(room.fixtures).map(({ deviceId, pos, key }) => (
+      {flat.map(({ deviceId, pos, key }) => (
         <Fixture key={key} deviceId={deviceId} pos={pos} room={room} />
       ))}
 

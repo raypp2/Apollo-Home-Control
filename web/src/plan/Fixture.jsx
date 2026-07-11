@@ -52,15 +52,15 @@ export default function Fixture({ deviceId, pos, room }) {
 
 /**
  * Best-effort rgba() rebuild of a color string at a given alpha, for the
- * fixture halo. Handles #rgb/#rrggbb and rgb()/rgba() inputs (the two shapes
- * deviceView colors realistically come in as); anything else (named colors,
- * hsl()) is passed through unchanged -- the halo still renders, just without
- * the reduced alpha.
+ * fixture halo (also used by GlowLayer's gradients). Handles #rgb/#rrggbb and
+ * rgb()/rgba() inputs (the two shapes deviceView colors realistically come in
+ * as); anything else (named colors, hsl()) is passed through unchanged -- the
+ * halo still renders, just without the reduced alpha.
  * @param {string} color
  * @param {number} alpha
  * @returns {string}
  */
-function withAlpha(color, alpha) {
+export function withAlpha(color, alpha) {
   if (typeof color !== 'string') return `rgba(255,178,102,${alpha})`;
 
   if (color[0] === '#') {
