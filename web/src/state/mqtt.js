@@ -236,7 +236,10 @@ export function connect() {
     return client;
   }
 
-  const url = `ws://${window.location.hostname}:9001`;
+  // Dev override: "npm run dev:pi" points the broker at the Pi, since under
+  // Vite window.location is localhost (which may have its own stale broker).
+  const host = import.meta.env.VITE_MQTT_HOST || window.location.hostname;
+  const url = `ws://${host}:9001`;
   client = mqtt.connect(url, {
     reconnectPeriod: 5000,
     connectTimeout: 4000,
