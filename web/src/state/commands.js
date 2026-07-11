@@ -130,6 +130,21 @@ export function commitLevel(entry, val) {
     `${entry.title} → ${v}%`);
 }
 
+/**
+ * Update a color light's local display WITHOUT sending -- used during a
+ * color-wheel drag so the row tint and plan glow track the finger while the
+ * command is withheld until release. No optimistic pending/revert is armed.
+ * @param {object} entry
+ * @param {string} hex - '#rrggbb' or 'rrggbb'
+ */
+export function previewColor(entry, hex) {
+  const clean = '#' + hex.replace('#', '').toLowerCase();
+  store.updateDevice(entry.stateTopic, (e) => ({
+    ...e,
+    live: { ...e.live, power: 'ON', color: clean },
+  }));
+}
+
 // The design's fixed swatch palette for color-capable lights.
 export const COLOR_CHOICES = ['#f2a65e', '#e86a6a', '#a688e8', '#6ab5e8', '#7ed9a0', '#e8d36a'];
 
