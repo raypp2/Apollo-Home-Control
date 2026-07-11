@@ -361,16 +361,26 @@ function fixtureIdentity(el) {
     let m = FIXTURE_LABEL_RE.exec(label);
     if (m) return { roomId: m[1], deviceId: m[2], index: Number(m[3]) };
     m = FIXTURE_ID_RE.exec(label);
-    if (m) return { roomId: m[1], deviceId: m[2], index: null };
+    if (m) {
+      // Dash-index tolerance: a hand-labeled "fixture:room:device-2" means
+      // position 2 of "device" (the natural thing to type after duplicating
+      // a dot, and what Inkscape's id-uniquifier suggests), NOT a device
+      // literally named "device-2" — no real device id ends in "-<digits>".
+      const dup = TRAILING_NUMERIC_DUP_RE.exec(m[2]);
+      if (dup) return { roomId: m[1], deviceId: dup[1], index: Number(dup[2]) };
+      return { roomId: m[1], deviceId: m[2], index: null };
+    }
   }
   const id = el.attrs.id;
   if (id) {
     const m = FIXTURE_ID_RE.exec(id);
     if (m) {
-      let deviceId = m[2];
-      const dup = TRAILING_NUMERIC_DUP_RE.exec(deviceId);
-      if (dup) deviceId = dup[1];
-      return { roomId: m[1], deviceId, index: null };
+      // Exporter ids use the same "-<n>" suffix for position n, so keep the
+      // number as the position index (an editor-mangled arbitrary suffix
+      // just orders the dot late, which is harmless).
+      const dup = TRAILING_NUMERIC_DUP_RE.exec(m[2]);
+      if (dup) return { roomId: m[1], deviceId: dup[1], index: Number(dup[2]) };
+      return { roomId: m[1], deviceId: m[2], index: null };
     }
   }
   return null;
@@ -391,7 +401,12 @@ function aimIdentity(el) {
     let m = AIM_LABEL_RE.exec(label);
     if (m) return { roomId: m[1], deviceId: m[2], index: Number(m[3]) };
     m = AIM_ID_RE.exec(label);
-    if (m) return { roomId: m[1], deviceId: m[2], index: null };
+    if (m) {
+      // Same dash-index tolerance as fixture circles.
+      const dup = TRAILING_NUMERIC_DUP_RE.exec(m[2]);
+      if (dup) return { roomId: m[1], deviceId: dup[1], index: Number(dup[2]) };
+      return { roomId: m[1], deviceId: m[2], index: null };
+    }
   }
   const id = el.attrs.id;
   if (id) {
