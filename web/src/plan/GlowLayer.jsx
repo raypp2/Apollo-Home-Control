@@ -8,13 +8,20 @@
 //   spread  full beam angle in degrees (optional, default 70).
 // A position WITHOUT an aim is a plain omnidirectional lamp: a single
 // radial pool centered on the fixture dot (OmniGlow).
-// A position WITH an aim renders three stacked shapes in the device's live
-// color, clipped to the room by the svg viewport (FixtureGlow):
+// A position WITH an AXIS-ALIGNED aim (within AXIS_TOLERANCE of 0/90/180/
+// 270 -- i.e. pointing square at a wall) renders three stacked shapes in
+// the device's live color, clipped to the room by the svg viewport
+// (FixtureGlow):
 //   1. a beam wedge from the fixture to where its aim ray hits the room wall,
 //   2. a bright elongated pool on that wall,
 //   3. a large dim "bounce" gradient centered on the wall hit, spilling back
 //      into the room -- fake radiosity; reads as the lit wall lighting the
 //      space, which is what a wall-facing lamp actually does.
+// A position with an OFF-AXIS aim skips the wall treatment entirely -- a
+// diagonal ray hits the wall at a glancing angle and the rotated pool
+// ellipse reads as an artificial straight-line hotspot (per Ray). Those
+// lamps just EMIT from themselves: the same wedge but fading to nothing
+// before the wall, plus a soft pool at the lamp position.
 // Shapes use mix-blend-mode: screen so overlapping lamps add rather than
 // just stack alpha. Gradient/filter defs get room+position-scoped ids (SVG
 // ids are document-global). Occlusion by furniture is deliberately ignored.
@@ -24,6 +31,20 @@ import { withAlpha } from './Fixture.jsx';
 
 const DEFAULT_GLOW = '#ffb267';
 const DEFAULT_SPREAD = 70;
+
+// Degrees of slack around 0/90/180/270 within which an aim still counts as
+// "pointing square at a wall" and gets the full wall-wash treatment. Beyond
+// it the lamp is off-axis and emits from itself instead (see module doc).
+const AXIS_TOLERANCE = 10;
+
+/**
+ * @param {number} aim degrees
+ * @returns {boolean} true when the aim is within AXIS_TOLERANCE of an axis
+ */
+function isAxisAligned(aim) {
+  const m = ((aim % 90) + 90) % 90;
+  return m <= AXIS_TOLERANCE || m >= 90 - AXIS_TOLERANCE;
+}
 
 /**
  * Walk the aim ray from a fixture position to the room rect's edge.
@@ -54,6 +75,7 @@ function wallHit(pos, w, h) {
 function FixtureGlow({ pos, view, idBase, w, h }) {
   const color = view.color || DEFAULT_GLOW;
   const { hx, hy, dx, dy, t } = wallHit(pos, w, h);
+  const axisAligned = isAxisAligned(pos.aim);
 
   const spread = pos.spread || DEFAULT_SPREAD;
   const halfWidth = Math.max(6, t * Math.tan(((spread / 2) * Math.PI) / 180));
@@ -72,18 +94,39 @@ function FixtureGlow({ pos, view, idBase, w, h }) {
   return (
     <g class="plan-glow" style={{ opacity: intensity }}>
       <defs>
-        <radialGradient id={`${idBase}-bounce`} cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stop-color={withAlpha(color, 0.5)} />
-          <stop offset="45%" stop-color={withAlpha(color, 0.22)} />
-          <stop offset="100%" stop-color={withAlpha(color, 0)} />
-        </radialGradient>
+        {axisAligned && (
+          <radialGradient id={`${idBase}-bounce`} cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color={withAlpha(color, 0.5)} />
+            <stop offset="45%" stop-color={withAlpha(color, 0.22)} />
+            <stop offset="100%" stop-color={withAlpha(color, 0)} />
+          </radialGradient>
+        )}
+        {!axisAligned && (
+          <radialGradient id={`${idBase}-source`} cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color={withAlpha(color, 0.55)} />
+            <stop offset="45%" stop-color={withAlpha(color, 0.2)} />
+            <stop offset="100%" stop-color={withAlpha(color, 0)} />
+          </radialGradient>
+        )}
         <linearGradient
           id={`${idBase}-wedge`}
           gradientUnits="userSpaceOnUse"
           x1={pos.x} y1={pos.y} x2={hx} y2={hy}
         >
-          <stop offset="0%" stop-color={withAlpha(color, 0.6)} />
-          <stop offset="100%" stop-color={withAlpha(color, 0.25)} />
+          {axisAligned ? (
+            <>
+              <stop offset="0%" stop-color={withAlpha(color, 0.6)} />
+              <stop offset="100%" stop-color={withAlpha(color, 0.25)} />
+            </>
+          ) : (
+            <>
+              {/* Off-axis: brightness lives at the lamp and the beam dies
+                  out before the wall -- no terminus edge, no wall hotspot. */}
+              <stop offset="0%" stop-color={withAlpha(color, 0.65)} />
+              <stop offset="55%" stop-color={withAlpha(color, 0.22)} />
+              <stop offset="100%" stop-color={withAlpha(color, 0)} />
+            </>
+          )}
         </linearGradient>
         <filter id={`${idBase}-soft`} x="-60%" y="-60%" width="220%" height="220%">
           <feGaussianBlur stdDeviation="3" />
@@ -92,26 +135,38 @@ function FixtureGlow({ pos, view, idBase, w, h }) {
           <feGaussianBlur stdDeviation="8" />
         </filter>
       </defs>
-      <circle
-        cx={hx} cy={hy} r={bounceR}
-        fill={`url(#${idBase}-bounce)`}
-        filter={`url(#${idBase}-softer)`}
-        style={{ mixBlendMode: 'screen' }}
-      />
+      {axisAligned && (
+        <circle
+          cx={hx} cy={hy} r={bounceR}
+          fill={`url(#${idBase}-bounce)`}
+          filter={`url(#${idBase}-softer)`}
+          style={{ mixBlendMode: 'screen' }}
+        />
+      )}
+      {!axisAligned && (
+        <circle
+          cx={pos.x} cy={pos.y} r={Math.max(w, h) * 0.28}
+          fill={`url(#${idBase}-source)`}
+          filter={`url(#${idBase}-softer)`}
+          style={{ mixBlendMode: 'screen' }}
+        />
+      )}
       <polygon
         points={wedgePoints}
         fill={`url(#${idBase}-wedge)`}
         filter={`url(#${idBase}-soft)`}
         style={{ mixBlendMode: 'screen' }}
       />
-      <ellipse
-        cx={hx} cy={hy}
-        rx={halfWidth * 1.1} ry={7}
-        transform={`rotate(${wallAngle} ${hx} ${hy})`}
-        fill={withAlpha(color, 0.75)}
-        filter={`url(#${idBase}-soft)`}
-        style={{ mixBlendMode: 'screen' }}
-      />
+      {axisAligned && (
+        <ellipse
+          cx={hx} cy={hy}
+          rx={halfWidth * 1.1} ry={7}
+          transform={`rotate(${wallAngle} ${hx} ${hy})`}
+          fill={withAlpha(color, 0.75)}
+          filter={`url(#${idBase}-soft)`}
+          style={{ mixBlendMode: 'screen' }}
+        />
+      )}
     </g>
   );
 }
