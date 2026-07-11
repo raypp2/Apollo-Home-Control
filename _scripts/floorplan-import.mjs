@@ -571,6 +571,7 @@ function main() {
         const roomId = roomIdRe.exec(id)[1];
         const pos = absPos(el);
         let label = el.attrs['data-label'];
+        let zone = el.attrs['data-zone'];
         let selectableAttr = el.attrs['data-selectable'];
         let linksAttr = el.attrs['data-links'];
         if (label === undefined) {
@@ -580,6 +581,10 @@ function main() {
         if (selectableAttr === undefined) {
           const fb = lookup.room(roomId);
           if (fb) { selectableAttr = String(fb.selectable !== false); warn(`room:${roomId} missing data-selectable, recovered from embedded metadata`); }
+        }
+        if (zone === undefined) {
+          const fb = lookup.room(roomId);
+          if (fb && fb.zone) { zone = fb.zone; warn(`room:${roomId} missing data-zone, recovered from embedded metadata`); }
         }
         let links;
         if (linksAttr) {
@@ -591,6 +596,7 @@ function main() {
         roomsById.set(roomId, {
           id: roomId,
           label: label !== undefined ? label : roomId,
+          zone: zone || undefined,
           selectable: selectableAttr !== undefined ? selectableAttr === 'true' : true,
           rect: { x: pos.x, y: pos.y, w: pos.w, h: pos.h },
           links,
@@ -712,6 +718,7 @@ function main() {
         selectable: room.selectable,
         rect: { x: round(room.rect.x), y: round(room.rect.y), w: round(room.rect.w), h: round(room.rect.h) },
       };
+      if (room.zone) out.zone = room.zone;
 
       const furnMap = furnByRoom.get(room.id);
       const furniture = [];

@@ -11,6 +11,9 @@ import { store, ui } from '../state/index.js';
 import Room from './Room.jsx';
 import Decoration from './Decoration.jsx';
 import AcVent from './AcVent.jsx';
+import ZoneOutline from './ZoneOutline.jsx';
+import { ZoneGlowLayer } from './GlowLayer.jsx';
+import { groupZones, getZoneGeometry } from './zoneGeometry.js';
 import './plan.css';
 
 const PLANE_W = 470;
@@ -48,7 +51,24 @@ export default function Plane() {
   const rooms = entries.filter((entry) => !entry.decorative);
   const decorations = entries.filter((entry) => entry.decorative);
   const selectedId = ui.selectedRoom.value;
-  const selectedRoom = selectedId ? rooms.find((r) => r.id === selectedId) || null : null;
+
+  // Open-plan zones (kitchen/dining/living/office): one traced outline +
+  // one shared glow layer per zone, computed/memoized here and handed down
+  // as plain props -- see zoneGeometry.js and ZoneOutline/GlowLayer's
+  // ZoneGlowLayer for the geometry and rendering.
+  const zones = groupZones(rooms).map((zone) => ({
+    ...zone,
+    geometry: getZoneGeometry(zone.name, zone.members),
+  }));
+  const selectedZone = zones.find((zone) => zone.name === selectedId) || null;
+  // ui.selectRoom resolves a tapped zone member to its zone id, so a plain
+  // `rooms.find(r => r.id === selectedId)` would miss it entirely (no room
+  // has "common" as its own id) and the pan/tilt below would never engage
+  // for a zone room. Fall back to a "virtual room" shaped like the zone's
+  // own bbox so tapping any zone member still pans/tilts toward it.
+  const selectedRoom = selectedZone
+    ? { rect: selectedZone.geometry.bbox }
+    : (selectedId ? rooms.find((r) => r.id === selectedId) || null : null);
 
   return (
     <div class="plan-stage">
@@ -56,6 +76,17 @@ export default function Plane() {
 
       <div class="plan-outer">
         <div class="plan-inner" style={{ transform: innerTransform(selectedRoom) }}>
+          {zones.map((zone) => (
+            <ZoneOutline key={`zone-outline-${zone.name}`} zoneName={zone.name} geometry={zone.geometry} />
+          ))}
+          {zones.map((zone) => (
+            <ZoneGlowLayer
+              key={`zone-glow-${zone.name}`}
+              zoneName={zone.name}
+              members={zone.members}
+              geometry={zone.geometry}
+            />
+          ))}
           {rooms.map((room) => (
             <Room key={room.id} room={room} />
           ))}

@@ -379,11 +379,19 @@ export function spotifyPlayPause(entry, isPlaying) {
 // all off, off -> fire the room's lighting scene); hold+drag dims every
 // dimmable light in the room together. Rooms with a dedicated lighting scene
 // use it for the "on" look; others just switch their lights on.
+//
+// `roomId` here may also be a ZONE id (e.g. "common") -- ui.selectRoom
+// already resolves a tapped zone-member room to its zone id, so every
+// function below resolves through store.devicesInZoneOrRoom, which unions
+// every member room's devices when `roomId` is a zone. ROOM_SCENE has no
+// entry for zone ids, so roomToggle's "off" branch for a zone falls through
+// to switching every zone light on directly rather than firing a single
+// room's scene.
 const ROOM_SCENE = { living: 'livingRoom', office: 'office' };
 
-/** Controllable lights in a room (dim/switch/color; excludes shade/other). */
+/** Controllable lights in a room or zone (dim/switch/color; excludes shade/other). */
 export function roomLights(roomId) {
-  return store.devicesInRoom(roomId).filter((e) => {
+  return store.devicesInZoneOrRoom(roomId).filter((e) => {
     const k = kindOf(e);
     return k === 'dim' || k === 'switch' || k === 'color';
   });

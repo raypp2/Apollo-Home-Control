@@ -257,6 +257,7 @@ function main() {
     const isSelectable = selectable !== false;
     const dataAttrs = {
       label,
+      zone: room.zone || undefined,
       selectable: String(selectable !== undefined ? !!selectable : true),
       links: Array.isArray(links) && links.length ? links.join(',') : undefined,
     };

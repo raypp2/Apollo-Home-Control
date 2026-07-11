@@ -21,7 +21,10 @@
 //       lastSeenMs: number | undefined,
 //       unconfirmed: boolean, // sticky flag: last optimistic patch reverted
 //     }
-//   rooms         Array<RoomEntry>              -- from /list/rooms, as-is
+//   rooms         Array<RoomEntry>              -- from /list/rooms, as-is.
+//                 Some entries carry an optional `zone` id (e.g. "common")
+//                 grouping open-plan rooms with no interior walls; see
+//                 zoneMembers()/devicesInZoneOrRoom() below.
 //   scenes        Map<id, { ...entry, active }> -- lightingScenes
 //   macros        Map<id, { ...entry, active }>
 //   deviceScenes  Array<entry>                  -- stateless, from /list/deviceScenes
@@ -67,6 +70,36 @@ export function devicesInRoom(roomId) {
     if (entry.room === roomId) {
       out.push(entry);
     }
+  }
+  return out;
+}
+
+/**
+ * Ordered member rooms sharing a "common" zone id (rooms.json's `zone`
+ * field -- an open-plan space with no interior walls, e.g. kitchen/dining/
+ * living/office). Order follows rooms.json's array order, not insertion or
+ * alphabetical order. Returns [] for a plain room id or an unknown id.
+ * @param {string} zoneId
+ * @returns {Array<object>}
+ */
+export function zoneMembers(zoneId) {
+  return rooms.value.filter((r) => r.zone === zoneId);
+}
+
+/**
+ * Devices for a room OR a zone. When `id` matches a zone id (any room's
+ * `zone` field), returns the union of `devicesInRoom` for every member room,
+ * in rooms.json member order, each room's own device order preserved within
+ * that. Otherwise behaves exactly like `devicesInRoom(id)`.
+ * @param {string} id - a room id or a zone id
+ * @returns {Array<object>}
+ */
+export function devicesInZoneOrRoom(id) {
+  const members = zoneMembers(id);
+  if (members.length === 0) return devicesInRoom(id);
+  const out = [];
+  for (const member of members) {
+    out.push(...devicesInRoom(member.id));
   }
   return out;
 }

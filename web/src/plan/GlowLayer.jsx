@@ -28,6 +28,8 @@
 
 import { store, commands } from '../state/index.js';
 import { withAlpha } from './Fixture.jsx';
+import { flattenFixtures } from './fixtures.js';
+import { rayUnionDistance } from './zoneGeometry.js';
 
 const DEFAULT_GLOW = '#ffb267';
 const DEFAULT_SPREAD = 70;
@@ -70,11 +72,15 @@ function wallHit(pos, w, h) {
 /**
  * One fixture position's glow: wedge + wall pool + bounce. Rendered inside
  * the room's <svg>; fades via group opacity so on/off transitions smoothly.
- * @param {{ pos: object, view: object, idBase: string, w: number, h: number }} props
+ * `hit` (the wall-hit point + ray direction + distance) is precomputed by
+ * the caller -- FixtureGlow uses the single-room wallHit(), ZoneFixtureGlow
+ * uses the union-aware rayUnionDistance() -- so this rendering half is
+ * shared between a plain room and a zone member unchanged.
+ * @param {{ pos: object, hit: {hx:number,hy:number,dx:number,dy:number,t:number}, view: object, idBase: string, w: number, h: number }} props
  */
-function FixtureGlow({ pos, view, idBase, w, h }) {
+function FixtureGlowVisual({ pos, hit, view, idBase, w, h }) {
   const color = view.color || DEFAULT_GLOW;
-  const { hx, hy, dx, dy, t } = wallHit(pos, w, h);
+  const { hx, hy, dx, dy, t } = hit;
   const axisAligned = isAxisAligned(pos.aim);
 
   const spread = pos.spread || DEFAULT_SPREAD;
@@ -172,6 +178,35 @@ function FixtureGlow({ pos, view, idBase, w, h }) {
 }
 
 /**
+ * FixtureGlowVisual for a plain (non-zoned) room: wall hit computed against
+ * that one room's own rect (w,h), same as always.
+ * @param {{ pos: object, view: object, idBase: string, w: number, h: number }} props
+ */
+function FixtureGlow({ pos, view, idBase, w, h }) {
+  const hit = wallHit(pos, w, h);
+  return <FixtureGlowVisual pos={pos} hit={hit} view={view} idBase={idBase} w={w} h={h} />;
+}
+
+/**
+ * FixtureGlowVisual for a zone member room: wall hit computed against the
+ * UNION of every member's (snapped) rect, so a beam crossing a former
+ * interior wall keeps going until the real zone boundary instead of
+ * stopping at the invisible member edge. `pos` and the returned hit point
+ * are both in the zone's bbox-relative coordinate space (what the caller's
+ * <svg viewBox> uses); `w,h` stay the fixture's HOME room dims so the
+ * bounce-pool size reads the same as the single-room case.
+ * @param {{ pos: object, view: object, idBase: string, w: number, h: number, snappedBounds: Array<object> }} props
+ */
+function ZoneFixtureGlow({ pos, view, idBase, w, h, snappedBounds }) {
+  const rad = (pos.aim * Math.PI) / 180;
+  const dx = Math.cos(rad);
+  const dy = Math.sin(rad);
+  const t = rayUnionDistance(pos.x, pos.y, dx, dy, snappedBounds);
+  const hit = { hx: pos.x + dx * t, hy: pos.y + dy * t, dx, dy, t };
+  return <FixtureGlowVisual pos={pos} hit={hit} view={view} idBase={idBase} w={w} h={h} />;
+}
+
+/**
  * One non-aimed fixture position's glow: a single radial pool centered on
  * the lamp itself, emitting 360deg. Sized to the room so one lamp still
  * reads as lighting the space, not a spotlight dot.
@@ -234,6 +269,97 @@ export default function GlowLayer({ room, fixtures }) {
           />
         );
       })}
+    </svg>
+  );
+}
+
+/**
+ * The zone's light layer: one <svg> spanning the union bbox of every member
+ * room, holding EVERY member's fixture glows (same OmniGlow/FixtureGlow
+ * visuals as a plain room) in one shared coordinate space, so light spills
+ * naturally across former interior walls. Mounted once per zone from
+ * Plane.jsx, as a sibling of the (now background-less) member Room divs --
+ * see Room.jsx's `zoned` skip of its own GlowLayer mount.
+ *
+ * - OmniGlow keeps a per-fixture pool radius sized by that fixture's HOME
+ *   room dims (room.rect.w/h), same as the single-room case -- only its
+ *   position is translated into bbox space.
+ * - FixtureGlow's directional beams route through ZoneFixtureGlow, which
+ *   swaps the single-room wallHit() for rayUnionDistance() against every
+ *   member's snapped rect, so a beam crossing a former interior wall keeps
+ *   going until it hits the zone's real (outer) boundary.
+ * - A <clipPath> built from the same snapped member rects keeps glow from
+ *   spilling onto a non-member room (bath/hall) that happens to fall inside
+ *   the union's bounding box without being part of the union itself.
+ * @param {{ zoneName: string, members: Array<object>, geometry: { bbox: object, snapped: Array<object> } }} props
+ */
+export function ZoneGlowLayer({ zoneName, members, geometry }) {
+  const { bbox, snapped } = geometry;
+  // Same snapped rects the outline/clip both key off, just re-based to the
+  // bbox-relative coordinate space this <svg>'s viewBox uses.
+  const relBounds = snapped.map((b) => ({
+    x1: b.x1 - bbox.x,
+    y1: b.y1 - bbox.y,
+    x2: b.x2 - bbox.x,
+    y2: b.y2 - bbox.y,
+  }));
+  const clipId = `zoneclip-${zoneName}`;
+
+  const glows = [];
+  members.forEach((room) => {
+    const entries = store.devicesInRoom(room.id);
+    const flat = flattenFixtures(room.fixtures);
+    flat.forEach(({ deviceId, pos, key }) => {
+      const entry = entries.find((e) => e.id === deviceId);
+      if (!entry) return;
+      const view = commands.deviceView(entry);
+      const idBase = `zoneglow-${zoneName}-${room.id}-${key}`;
+      // Fixture positions are stored room-relative (Fixture.jsx positions
+      // them within their room div) -- offset by the member's own rect
+      // origin, then into bbox space, to land in this shared <svg>.
+      const relPos = {
+        x: room.rect.x + pos.x - bbox.x,
+        y: room.rect.y + pos.y - bbox.y,
+        aim: pos.aim,
+        spread: pos.spread,
+      };
+      if (pos.aim != null) {
+        glows.push(
+          <ZoneFixtureGlow
+            key={idBase}
+            pos={relPos}
+            view={view}
+            idBase={idBase}
+            w={room.rect.w}
+            h={room.rect.h}
+            snappedBounds={relBounds}
+          />,
+        );
+      } else {
+        glows.push(
+          <OmniGlow key={idBase} pos={relPos} view={view} idBase={idBase} w={room.rect.w} h={room.rect.h} />,
+        );
+      }
+    });
+  });
+
+  return (
+    <svg
+      class="plan-zone__lightlayer"
+      style={{ left: `${bbox.x}px`, top: `${bbox.y}px` }}
+      width={bbox.w}
+      height={bbox.h}
+      viewBox={`0 0 ${bbox.w} ${bbox.h}`}
+      aria-hidden="true"
+    >
+      <defs>
+        <clipPath id={clipId}>
+          {relBounds.map((b, i) => (
+            <rect key={i} x={b.x1} y={b.y1} width={b.x2 - b.x1} height={b.y2 - b.y1} />
+          ))}
+        </clipPath>
+      </defs>
+      <g clip-path={`url(#${clipId})`}>{glows}</g>
     </svg>
   );
 }

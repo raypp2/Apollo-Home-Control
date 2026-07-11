@@ -36,6 +36,20 @@ export const ROOM_SCENES = {
 };
 
 /**
+ * ROOM_SCENES entries for a zone's member rooms, in member order. A "common"
+ * zone (kitchen/dining/living/office) spans multiple ROOM_SCENES entries
+ * (living, office today) -- the zone panel shows all of them as presets
+ * within the shared space, rather than picking just one the way a plain
+ * room's panel would.
+ * @param {Array<{id:string}>} members - ordered room objects, e.g. from
+ *   store.zoneMembers(zoneId)
+ * @returns {Array<{kind:'scene'|'macro', id:string}>}
+ */
+export function roomScenesForZone(members) {
+  return members.map((room) => ROOM_SCENES[room.id]).filter(Boolean);
+}
+
+/**
  * Looks up a tier entry's live store record by kind+id. Takes the two Maps
  * as arguments (rather than reading store.scenes.value/store.macros.value
  * itself) so callers read the signals once in their own render and stay

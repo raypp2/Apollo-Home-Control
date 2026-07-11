@@ -7,6 +7,17 @@
 //
 // The AV zone (living + kitchen + office) is one open-plan space with no walls,
 // so the shared AC/Anthem/Spotify/projector controls appear for all three.
+//
+// Zone panels: rooms.json's `zone` field (e.g. "common" -- kitchen/dining/
+// living/office, one continuous space with no interior walls) makes
+// ui.selectedRoom hold the ZONE id whenever any member room is tapped (see
+// ui.selectRoom). This panel detects that via store.zoneMembers and renders
+// ONE shared panel for the whole space: a "Common" title, a master light row
+// (RoomToggle) that controls every zone light via commands.roomLights/
+// roomToggle/roomDim resolving through store.devicesInZoneOrRoom, the union
+// of every member room's device rows (member order preserved), and both
+// member rooms' scene-pill presets (registry.roomScenesForZone) since a
+// zone has no single scene of its own.
 
 import { useEffect, useState } from 'preact/hooks';
 import { store, ui, commands } from '../state/index.js';
@@ -17,11 +28,17 @@ import AccentDrillIn from './AccentDrillIn.jsx';
 import ClimateCluster from '../climate/index.js';
 import { AvCluster, NowPlaying } from '../av/index.js';
 import { RoomToggle } from '../scenes/index.js';
+import { roomScenesForZone, resolveEntry } from '../scenes/registry.js';
+import { SceneMacroButton } from '../scenes/Button.jsx';
 
 const PANEL_KINDS = new Set(['dim', 'switch', 'color', 'shade']);
 const FONT = "'Outfit', system-ui, sans-serif";
-// Open-plan zone that shares the living room's AV + climate hardware.
-const AV_ZONE = new Set(['living', 'kitchen', 'office']);
+// Open-plan zone that shares the living room's AV + climate hardware. Every
+// member of the "common" zone (kitchen/dining/living/office) now resolves to
+// the "common" zone id before it ever reaches this component (see
+// ui.selectRoom), so "common" is what actually needs to match here; the
+// individual member ids are kept for defensiveness only.
+const AV_ZONE = new Set(['living', 'kitchen', 'office', 'common']);
 
 const PANEL_STYLE = {
   position: 'relative',
@@ -91,18 +108,23 @@ function RoomPanel() {
     );
   }
 
-  const room = store.rooms.value.find((r) => r.id === selectedRoom);
-  const label = titleCase(room ? room.label : selectedRoom);
+  const zoneMembers = store.zoneMembers(selectedRoom);
+  const isZone = zoneMembers.length > 0;
+  const room = isZone ? null : store.rooms.value.find((r) => r.id === selectedRoom);
+  // titleCase("common") -> "Common"; plain rooms keep their existing label.
+  const label = isZone ? titleCase(selectedRoom) : titleCase(room ? room.label : selectedRoom);
 
-  const roomDevices = store.devicesInRoom(selectedRoom);
+  const roomDevices = store.devicesInZoneOrRoom(selectedRoom);
   const accentEntries = roomDevices.filter((entry) => entry.type === 'dmxFixture');
   const entries = roomDevices
     .filter((entry) => entry.type !== 'dmxFixture')
     .filter((entry) => PANEL_KINDS.has(commands.kindOf(entry)));
 
-  // AV/climate cluster: shared across the open-plan AV zone (living/kitchen/
-  // office). The AC/Anthem/Spotify/projector are all configured under the
-  // living room, so we find them across every device, not just this room's.
+  // AV/climate cluster: shared across the open-plan "common" zone (kitchen/
+  // dining/living/office). The AC/Anthem/Spotify/projector are all configured
+  // under the living room, so we find them across every device, not just
+  // this room's -- that's already zone-agnostic since it searches every
+  // device regardless of which room/zone is selected.
   const inAvZone = AV_ZONE.has(selectedRoom);
   const allDevices = inAvZone ? [...store.devices.value.values()] : [];
   const acEntry = allDevices.find((e) => e.isAC || (e.alexa && e.alexa.isAC)) || null;
@@ -111,6 +133,18 @@ function RoomPanel() {
   const spotifyEntry = allDevices.find((e) => e.type === 'spotify') || null;
   const inputScenes = store.deviceScenes.value.map((s) => ({ id: s.id, label: s.title }));
   const hasFooter = acEntry || receiverEntry || spotifyEntry;
+
+  // Zone panel only: a "common" zone has no single scene of its own, so show
+  // every member room's scene-pill preset (living, office today) as a
+  // shortcut within the shared space, alongside the master light row.
+  const zoneScenes = isZone
+    ? roomScenesForZone(zoneMembers)
+        .map((mapping) => ({
+          mapping,
+          entry: resolveEntry(mapping.kind, mapping.id, store.scenes.value, store.macros.value),
+        }))
+        .filter((x) => x.entry)
+    : [];
 
   return (
     <div style={PANEL_STYLE}>
@@ -130,6 +164,14 @@ function RoomPanel() {
         {commands.roomLights(selectedRoom).length > 1 && (
           <div style={{ marginBottom: 16 }}>
             <RoomToggle roomId={selectedRoom} roomLabel={label} />
+          </div>
+        )}
+
+        {zoneScenes.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+            {zoneScenes.map(({ mapping, entry }) => (
+              <SceneMacroButton key={mapping.id} kind={mapping.kind} entry={entry} />
+            ))}
           </div>
         )}
 

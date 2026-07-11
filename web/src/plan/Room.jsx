@@ -5,34 +5,31 @@
 // all read live signals, so a room re-renders on its own whenever the
 // relevant slice of state changes -- no prop drilling of derived booleans
 // from Plane.
+//
+// Rooms sharing a `zone` (rooms.json's open-plan grouping -- kitchen/dining/
+// living/office) render WITHOUT their own background/border/selected-overlay
+// or room-level GlowLayer: that whole surface -- outline, fill, selected
+// glow, and every member's fixture glow -- is drawn once at the plane level
+// by ZoneOutline / GlowLayer's ZoneGlowLayer (see Plane.jsx), spanning the
+// union of the members' rects with no interior wall between them. A zoned
+// Room still owns click handling, furniture, fixture dots, and its label --
+// it's just visually transparent where the zone layer already painted.
 
 import { store, ui, commands } from '../state/index.js';
 import Furniture from './Furniture.jsx';
 import Fixture from './Fixture.jsx';
 import GlowLayer from './GlowLayer.jsx';
-
-/**
- * A fixture's value in room.fixtures is either a single {x,y} or an array of
- * them (e.g. the primary bedroom's "bedroomColor", which gets a dot on each
- * nightstand lamp but both dots reflect/control the one device). Flatten
- * room.fixtures into one dot per position, all bound to the same deviceId,
- * with stable per-position keys.
- * @param {object} fixtures
- * @returns {Array<{ deviceId: string, pos: {x:number,y:number}, key: string }>}
- */
-function flattenFixtures(fixtures) {
-  return Object.entries(fixtures || {}).flatMap(([deviceId, value]) => {
-    const positions = Array.isArray(value) ? value : [value];
-    return positions.map((pos, i) => ({ deviceId, pos, key: `${deviceId}-${i}` }));
-  });
-}
+import { flattenFixtures } from './fixtures.js';
 
 /**
  * @param {{ room: object }} props
  */
 export default function Room({ room }) {
   const selectable = room.selectable !== false;
-  const selected = ui.selectedRoom.value === room.id;
+  const zoned = !!room.zone;
+  // A zoned room's tap resolves to its zone id (ui.selectRoom), so every
+  // member selects together -- compare against that, not just room.id.
+  const selected = ui.selectedRoom.value === (room.zone || room.id);
 
   // Every fixture position renders its own glow via GlowLayer -- directional
   // beam when the position has an `aim`, 360deg pool at the dot otherwise.
@@ -50,7 +47,10 @@ export default function Room({ room }) {
     const view = commands.deviceView(entry);
     if ((view.kind === 'dim' || view.kind === 'switch') && view.on) undottedOn += 1;
   }
-  const glowOpacity = undottedOn > 0 ? Math.min(0.25 + undottedOn * 0.13, 0.8) : 0;
+  // Zoned rooms skip this too -- a rectangular per-room wash would show a
+  // seam at the (invisible) member boundary, breaking the one-surface look
+  // the zone glow layer already provides.
+  const glowOpacity = !zoned && undottedOn > 0 ? Math.min(0.25 + undottedOn * 0.13, 0.8) : 0;
 
   const style = {
     left: `${room.rect.x}px`,
@@ -60,7 +60,8 @@ export default function Room({ room }) {
   };
 
   const classNames = ['plan-room', selectable ? 'plan-room--selectable' : 'plan-room--fixed'];
-  if (selected) classNames.push('plan-room--selected');
+  if (zoned) classNames.push('plan-room--zoned');
+  if (selected && !zoned) classNames.push('plan-room--selected');
 
   return (
     <div
@@ -72,7 +73,7 @@ export default function Room({ room }) {
         <div class="plan-room__glow" style={{ opacity: glowOpacity }} />
       )}
 
-      {flat.length > 0 && (
+      {!zoned && flat.length > 0 && (
         <GlowLayer room={room} fixtures={flat} />
       )}
 
@@ -86,7 +87,7 @@ export default function Room({ room }) {
 
       <div class="plan-room__label">{room.label}</div>
 
-      {selected && <div class="plan-room__selected-overlay" />}
+      {selected && !zoned && <div class="plan-room__selected-overlay" />}
     </div>
   );
 }

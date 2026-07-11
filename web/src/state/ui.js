@@ -7,20 +7,36 @@
 // `lastAction`.
 
 import { signal } from '@preact/signals';
+import { rooms } from './store.js';
 
-/** Currently selected room id (matches a rooms[].id), or null when none. */
+/**
+ * Currently selected room id, or null when none. When the tapped room
+ * belongs to a "common" zone (an open-plan space with no interior walls --
+ * see rooms.json's `zone` field), this holds the ZONE id instead of the
+ * member room id, so every member room lights up as selected and one shared
+ * panel covers the whole space. Plain rooms (no `zone`) store their own id
+ * as always.
+ */
 export const selectedRoom = signal(null);
 
 /** Human-readable trace of the most recent action, shown in the status strip. */
 export const lastAction = signal('');
 
 /**
- * Select a room (tapping it on the plane, or programmatically). Passing the
- * already-selected room id is a no-op-friendly re-set; pass null to clear.
+ * Select a room (tapping it on the plane, or programmatically). Resolves a
+ * zone-member room to its zone id first (see `selectedRoom` doc), so callers
+ * can keep passing the tapped room's own id regardless of zone membership.
+ * Passing the already-selected room id is a no-op-friendly re-set; pass null
+ * to clear.
  * @param {string|null} roomId
  */
 export function selectRoom(roomId) {
-  selectedRoom.value = roomId;
+  if (roomId == null) {
+    selectedRoom.value = null;
+    return;
+  }
+  const room = rooms.value.find((r) => r.id === roomId);
+  selectedRoom.value = (room && room.zone) || roomId;
 }
 
 /**

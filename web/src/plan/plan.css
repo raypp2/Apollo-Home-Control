@@ -60,6 +60,17 @@
   border: 1.5px solid rgba(234, 229, 239, 0.22);
 }
 
+/* Open-plan zone members (kitchen/dining/living/office): the surface fill,
+   border, and selected glow all move to the plane-level ZoneOutline (one
+   continuous outline around the union, no interior wall) -- see
+   ZoneOutline.jsx. Everything else about the room div (click target,
+   furniture, fixture dots, label) is unchanged. Placed after the base
+   .plan-room rule so it wins at equal specificity. */
+.plan-room--zoned {
+  background: none;
+  border: none;
+}
+
 .plan-room--selectable {
   cursor: pointer;
 }
@@ -115,6 +126,44 @@
 .plan-room__lightlayer {
   position: absolute;
   inset: 0;
+  pointer-events: none;
+}
+
+/* Zone outline (ZoneOutline.jsx): the traced union boundary of an open-plan
+   zone's member rooms -- one continuous surface + border standing in for
+   every member's own .plan-room background/border. Mounted before the
+   (zoned) Room divs in Plane.jsx, so plain DOM order alone puts it below
+   them and their furniture/fixtures -- same stacking .plan-room's own
+   background always had, no z-index needed. */
+.plan-zone__outline {
+  position: absolute;
+  pointer-events: none;
+}
+
+.plan-zone__outline-shape {
+  fill: rgba(234, 229, 239, 0.045);
+  stroke: rgba(234, 229, 239, 0.22);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 0.3s ease, filter 0.3s ease;
+}
+
+/* Selected treatment for the whole zone -- the outline-wide equivalent of
+   .plan-room__selected-overlay's purple border + glow. */
+.plan-zone__outline--selected .plan-zone__outline-shape {
+  stroke: #a688e8;
+  stroke-width: 2px;
+  filter: drop-shadow(0 0 6px #a688e8) drop-shadow(0 0 12px rgba(166, 136, 232, 0.6));
+}
+
+/* Zone glow layer (GlowLayer.jsx's ZoneGlowLayer): one svg per zone,
+   spanning the union bbox, holding every member's fixture glows clipped to
+   the (snapped) member rects. Mounted right after the outline and before
+   the Room divs, so it paints above the outline's fill but below furniture
+   outlines and fixture dots -- same relative position a single room's own
+   .plan-room__lightlayer has to its own background and children. */
+.plan-zone__lightlayer {
+  position: absolute;
   pointer-events: none;
 }
 
