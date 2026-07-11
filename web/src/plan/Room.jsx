@@ -34,20 +34,23 @@ export default function Room({ room }) {
   const selectable = room.selectable !== false;
   const selected = ui.selectedRoom.value === room.id;
 
-  // Fixture positions carrying an `aim` render their own directional glow
-  // via GlowLayer; their devices are excluded from the centered room wash so
-  // the two effects don't double up.
+  // Every fixture position renders its own glow via GlowLayer -- directional
+  // beam when the position has an `aim`, 360deg pool at the dot otherwise.
+  // The centered room wash survives only as a fallback for devices that are
+  // on but have no dot on the plan, so the two effects never double up.
   const flat = flattenFixtures(room.fixtures);
-  const aimedFixtures = flat.filter((f) => f.pos.aim != null);
-  const aimedDeviceIds = new Set(aimedFixtures.map((f) => f.deviceId));
+  const dottedDeviceIds = new Set(flat.map((f) => f.deviceId));
 
   const entries = store.devicesInRoom(room.id);
-  let lightsOn = 0;
+  let undottedOn = 0;
   for (const entry of entries) {
-    if (aimedDeviceIds.has(entry.id)) continue;
-    if (commands.deviceView(entry).on) lightsOn += 1;
+    if (dottedDeviceIds.has(entry.id)) continue;
+    // Lights only: an open shade also reports on (position > 0), and it
+    // shouldn't wash the room in lamplight.
+    const view = commands.deviceView(entry);
+    if ((view.kind === 'dim' || view.kind === 'switch') && view.on) undottedOn += 1;
   }
-  const glowOpacity = lightsOn > 0 ? Math.min(0.25 + lightsOn * 0.13, 0.8) : 0;
+  const glowOpacity = undottedOn > 0 ? Math.min(0.25 + undottedOn * 0.13, 0.8) : 0;
 
   const style = {
     left: `${room.rect.x}px`,
@@ -69,8 +72,8 @@ export default function Room({ room }) {
         <div class="plan-room__glow" style={{ opacity: glowOpacity }} />
       )}
 
-      {aimedFixtures.length > 0 && (
-        <GlowLayer room={room} fixtures={aimedFixtures} />
+      {flat.length > 0 && (
+        <GlowLayer room={room} fixtures={flat} />
       )}
 
       {(room.furniture || []).map((item, i) => (

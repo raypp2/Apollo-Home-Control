@@ -8,6 +8,13 @@
       "cwd": "web",
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "apollo-dashboard-dev-pi",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:pi"],
+      "cwd": "web",
+      "port": 5175
     }
   ]
 }

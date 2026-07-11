@@ -12,8 +12,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:80',
-      '/list': 'http://localhost:80',
+      // "npm run dev" expects a backend on this Mac; "npm run dev:pi" points
+      // the proxy at the live Pi instead (read-only hydration works fine).
+      '/api': process.env.APOLLO_API_TARGET || 'http://localhost:80',
+      '/list': process.env.APOLLO_API_TARGET || 'http://localhost:80',
     },
   },
 });

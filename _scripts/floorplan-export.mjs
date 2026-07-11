@@ -28,6 +28,14 @@
 //                                    with inkscape:label "...:1", the rest
 //                                    get a "-2", "-3", ... id suffix and a
 //                                    matching ":2", ":3", ... label.
+//   fixture-aim:<roomId>:<deviceId> — direction arrow (<line>) for a fixture
+//                                    position that carries an `aim` field (a
+//                                    directional lamp). Same "-2"/"-3" id +
+//                                    ":<n>" label conventions as the circles.
+//                                    Only the line's ANGLE round-trips (its
+//                                    position/length are ignored on import);
+//                                    the arrow is the source of truth for
+//                                    direction — see the SVG header comment.
 //   decoration:<slug>              — a cosmetic-only rect (rooms.json entry
 //                                    with decorative:true, e.g. a closet
 //                                    outline), in its own "decorations"
@@ -191,6 +199,22 @@ function main() {
                     gets one circle per position: the first plain, the rest
                     id-suffixed "-2", "-3", ... with inkscape:label
                     "fixture:<roomId>:<deviceId>:<index>" (index 1 first).
+                    Directional lamps additionally get an aim arrow <line>
+                    (see LIGHT DIRECTION below).
+
+    LIGHT DIRECTION: a fixture position with an "aim" field (a directional
+    lamp — its glow renders as a beam + wall wash instead of a 360deg pool)
+    gets an arrow <line id="fixture-aim:<roomId>:<deviceId>"> next to its
+    circle, following the same "-2"/"-3" id and ":<n>" inkscape:label
+    conventions as the circles. On import, ONLY THE ARROW'S ANGLE is read
+    (x1,y1 -> x2,y2; 0deg = right/+x, 90deg = down/+y, 270deg = up); its
+    position and length are ignored, so an arrow left behind after moving
+    the fixture circle is harmless. The arrow is the source of truth:
+      - ROTATE the arrow to re-aim the light.
+      - DELETE the arrow to make the light non-directional (360deg pool).
+      - To GIVE a light direction, copy any arrow and set its
+        inkscape:label to "fixture-aim:<roomId>:<deviceId>" (append ":<n>"
+        for position n of a multi-position device).
 
     All positions are ABSOLUTE on the 470x980 canvas (rooms.json stores
     furniture/fixtures relative to their room's rect — this export bakes
@@ -211,6 +235,13 @@ function main() {
 
     Import: node _scripts/floorplan-import.mjs [svg-file] [--write]
   -->`);
+
+  // --- shared defs (aim-arrow head used by every fixture-aim line) ---
+  lines.push(`  <defs>`);
+  lines.push(`    <marker id="aim-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">`);
+  lines.push(`      <path d="M 0 0 L 10 5 L 0 10 z" fill="#c2452d" />`);
+  lines.push(`    </marker>`);
+  lines.push(`  </defs>`);
 
   // --- guides layer (locked bounds reference) ---
   lines.push(`  <g id="guides" inkscape:label="guides" inkscape:groupmode="layer" sodipodi:insensitive="true" style="pointer-events:none">`);
@@ -315,6 +346,15 @@ function main() {
         const id = n === 1 ? `fixture:${roomId}:${deviceId}` : `fixture:${roomId}:${deviceId}-${n}`;
         const labelAttr = positions.length > 1 ? ` inkscape:label="fixture:${esc(roomId)}:${esc(deviceId)}:${n}"` : '';
         lines.push(`    <circle id="${esc(id)}" cx="${num(cx)}" cy="${num(cy)}" r="5" style="fill:#e0834d;stroke:#7a3f14;stroke-width:1"${labelAttr} />`);
+        if (pos.aim != null) {
+          // Aim arrow: only its angle survives import — length/position are
+          // presentation, so a fixed 30px arrow starting at the dot is fine.
+          const rad = (pos.aim * Math.PI) / 180;
+          const x2 = cx + 30 * Math.cos(rad);
+          const y2 = cy + 30 * Math.sin(rad);
+          const aimId = n === 1 ? `fixture-aim:${roomId}:${deviceId}` : `fixture-aim:${roomId}:${deviceId}-${n}`;
+          lines.push(`    <line id="${esc(aimId)}" x1="${num(cx)}" y1="${num(cy)}" x2="${num(x2)}" y2="${num(y2)}" style="stroke:#c2452d;stroke-width:2" marker-end="url(#aim-arrow)" inkscape:label="fixture-aim:${esc(roomId)}:${esc(deviceId)}:${n}" />`);
+        }
         if (n === 1) {
           lines.push(`    <text x="${num(cx + 8)}" y="${num(cy + 3)}" font-size="8" font-family="sans-serif" fill="#7a3f14" style="pointer-events:none">${esc(deviceId)}</text>`);
         }

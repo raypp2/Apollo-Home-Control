@@ -13,11 +13,12 @@
 // clobbering the real config.
 //
 // PARSING APPROACH: no XML/DOM dependency. floorplan-export.mjs always
-// emits one self-closing <rect .../> or <circle .../> per line with every
-// attribute inline, plus <g transform="rotate(deg cx cy)"> wrapping only
-// around rotated furniture items — a small, fully-controlled subset of SVG
-// we can scan with regexes reliably. This is NOT a general SVG parser; see
-// LIMITATIONS below for what happens when an editor rewrites the structure.
+// emits one self-closing <rect .../>, <circle .../>, or <line .../> per
+// line with every attribute inline, plus <g transform="rotate(deg cx cy)">
+// wrapping only around rotated furniture items — a small, fully-controlled
+// subset of SVG we can scan with regexes reliably. This is NOT a general
+// SVG parser; see LIMITATIONS below for what happens when an editor
+// rewrites the structure.
 //
 // ROOMS.JSON SCHEMA v2:
 //   Room     — as before, but a `fixtures` value may be a single {x,y} OR
@@ -36,6 +37,22 @@
 //                                  (matches web/src/plan/Furniture.jsx)
 //   fixture:<roomId>:<deviceId> -> fixtures[deviceId], room-relative. May be
 //                                  backed by MULTIPLE <circle>s (see below).
+//   fixture-aim:<roomId>:<deviceId> -> fixtures[deviceId].aim, read from a
+//                                  <line>'s ANGLE (x1,y1 -> x2,y2, degrees,
+//                                  0 = right/+x, 90 = down/+y, rounded to
+//                                  whole degrees). The line's position and
+//                                  length are ignored. THE ARROW IS THE
+//                                  SOURCE OF TRUTH for direction: no arrow
+//                                  for a position -> no aim in the output
+//                                  (the embedded-metadata merge deliberately
+//                                  skips `aim`, unlike other extra fields
+//                                  such as `spread`), so deleting an arrow
+//                                  in the editor un-aims the light, and
+//                                  adding a labeled arrow aims it. Same
+//                                  ":<index>" label convention as circles
+//                                  for multi-position devices; an unlabeled
+//                                  arrow (identity from id only) is taken as
+//                                  position 1.
 //
 // ILLUSTRATOR ID MANGLING: when a shape is duplicated in Illustrator, the
 // duplicate keeps the same visual identity but gets a NEW, uniquified `id`
@@ -185,6 +202,35 @@ function parseTransform(transform) {
   return { dx: 0, dy: 0, rotDeg: null, unsupported: true };
 }
 
+// Applies a single-function transform attribute to a point — exact for the
+// translate/matrix/rotate forms (all affine), which covers everything our
+// exporter emits and the matrices Illustrator bakes rotations into. Used for
+// aim-line endpoints, where the ANGLE between the two transformed endpoints
+// is the data being read back (so rotating an arrow in the editor works
+// whether the editor rewrote x1/y1/x2/y2 or wrapped them in a matrix).
+// A multi-function transform list comes back { unsupported: true }.
+function applyTransformToPoint(transform, x, y) {
+  if (!transform) return { x, y };
+  const t = transform.trim();
+  let m = /^translate\(\s*(-?[\d.eE+-]+)(?:[,\s]+(-?[\d.eE+-]+))?\s*\)$/.exec(t);
+  if (m) return { x: x + num(m[1]), y: y + (m[2] !== undefined ? num(m[2]) : 0) };
+  m = /^matrix\(\s*(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+)\s*\)$/.exec(t);
+  if (m) {
+    const [a, b, c, d, e, f] = m.slice(1).map(Number);
+    return { x: a * x + c * y + e, y: b * x + d * y + f };
+  }
+  m = /^rotate\(\s*(-?[\d.eE+-]+)(?:[,\s]+(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+))?\s*\)$/.exec(t);
+  if (m) {
+    const rad = (num(m[1]) * Math.PI) / 180;
+    const cx = m[2] !== undefined ? num(m[2]) : 0;
+    const cy = m[3] !== undefined ? num(m[3]) : 0;
+    const dx = x - cx;
+    const dy = y - cy;
+    return { x: cx + dx * Math.cos(rad) - dy * Math.sin(rad), y: cy + dx * Math.sin(rad) + dy * Math.cos(rad) };
+  }
+  return { x, y, unsupported: true };
+}
+
 function readSvg(file) {
   try {
     return fs.readFileSync(file, 'utf8');
@@ -206,7 +252,7 @@ function reScanWithStack(svgRaw) {
   // metadata-block match run away hunting for the next literal
   // </metadata>, swallowing the whole rest of the file).
   const svg = svgRaw.replace(/<!--[\s\S]*?-->/g, '');
-  const tokenRe = /<g\b([^>]*)>|<\/g>|<rect\b([^>]*)\/>|<circle\b([^>]*)\/>|<metadata\b[^>]*>[\s\S]*?<\/metadata>/g;
+  const tokenRe = /<g\b([^>]*)>|<\/g>|<rect\b([^>]*)\/>|<circle\b([^>]*)\/>|<line\b([^>]*)\/>|<metadata\b[^>]*>[\s\S]*?<\/metadata>/g;
   const elements = [];
   const groups = [];
   const gStack = [];
@@ -232,6 +278,11 @@ function reScanWithStack(svgRaw) {
     if (full.startsWith('<circle')) {
       const attrs = parseAttrs(m[3] || '');
       elements.push({ tag: 'circle', attrs, enclosingTransform: gStack.length ? gStack[gStack.length - 1] : null });
+      continue;
+    }
+    if (full.startsWith('<line')) {
+      const attrs = parseAttrs(m[4] || '');
+      elements.push({ tag: 'line', attrs, enclosingTransform: gStack.length ? gStack[gStack.length - 1] : null });
       continue;
     }
   }
@@ -315,6 +366,36 @@ function fixtureIdentity(el) {
   const id = el.attrs.id;
   if (id) {
     const m = FIXTURE_ID_RE.exec(id);
+    if (m) {
+      let deviceId = m[2];
+      const dup = TRAILING_NUMERIC_DUP_RE.exec(deviceId);
+      if (dup) deviceId = dup[1];
+      return { roomId: m[1], deviceId, index: null };
+    }
+  }
+  return null;
+}
+
+// Aim arrows (<line id="fixture-aim:...">) follow the fixture conventions:
+// label preferred (it can carry the trailing ":<index>" for multi-position
+// devices), id as fallback with the Illustrator all-digits "-N" dup suffix
+// stripped. A null index means "position 1" — the exporter always labels
+// aim lines with an explicit index, so null only occurs for hand-added or
+// label-stripped arrows.
+const AIM_LABEL_RE = /^fixture-aim:([^:]+):(.+):([0-9]+)$/;
+const AIM_ID_RE = /^fixture-aim:([^:]+):(.+)$/;
+
+function aimIdentity(el) {
+  const label = el.attrs['inkscape:label'];
+  if (label) {
+    let m = AIM_LABEL_RE.exec(label);
+    if (m) return { roomId: m[1], deviceId: m[2], index: Number(m[3]) };
+    m = AIM_ID_RE.exec(label);
+    if (m) return { roomId: m[1], deviceId: m[2], index: null };
+  }
+  const id = el.attrs.id;
+  if (id) {
+    const m = AIM_ID_RE.exec(id);
     if (m) {
       let deviceId = m[2];
       const dup = TRAILING_NUMERIC_DUP_RE.exec(deviceId);
@@ -419,6 +500,7 @@ function main() {
   const furnByRoom = new Map(); // roomId -> Map(idxKey -> {x,y,w,h,r,rot})
   const kidsByRoom = new Map(); // roomId -> Map(idxKey -> Map(kidKey -> {x,y,w,h,r}))
   const fixturesByRoom = new Map(); // roomId -> Map(deviceId -> [{x,y,index}])
+  const aimsByRoom = new Map(); // roomId -> Map(deviceId -> Map(index -> deg))
 
   let roomOrder = 0;
   for (const el of elements) {
@@ -506,14 +588,50 @@ function main() {
       continue;
     }
 
-    // circle
-    const fx = fixtureIdentity(el);
-    if (fx) {
-      const pos = absPos(el);
-      if (!fixturesByRoom.has(fx.roomId)) fixturesByRoom.set(fx.roomId, new Map());
-      const byDevice = fixturesByRoom.get(fx.roomId);
-      if (!byDevice.has(fx.deviceId)) byDevice.set(fx.deviceId, []);
-      byDevice.get(fx.deviceId).push({ x: pos.x, y: pos.y, index: fx.index });
+    if (el.tag === 'circle') {
+      const fx = fixtureIdentity(el);
+      if (fx) {
+        const pos = absPos(el);
+        if (!fixturesByRoom.has(fx.roomId)) fixturesByRoom.set(fx.roomId, new Map());
+        const byDevice = fixturesByRoom.get(fx.roomId);
+        if (!byDevice.has(fx.deviceId)) byDevice.set(fx.deviceId, []);
+        byDevice.get(fx.deviceId).push({ x: pos.x, y: pos.y, index: fx.index });
+      }
+      continue;
+    }
+
+    // line — only aim arrows are meaningful; angle is the payload, the
+    // endpoints' absolute position is presentation-only.
+    const ai = aimIdentity(el);
+    if (ai) {
+      const name = `fixture-aim:${ai.roomId}:${ai.deviceId}${ai.index != null ? `:${ai.index}` : ''}`;
+      let p1 = applyTransformToPoint(el.attrs.transform, num(el.attrs.x1), num(el.attrs.y1));
+      let p2 = applyTransformToPoint(el.attrs.transform, num(el.attrs.x2), num(el.attrs.y2));
+      if (p1.unsupported || p2.unsupported) {
+        warn(`${name}: unsupported transform "${el.attrs.transform}" on the aim line — reading the angle from its raw endpoints; please verify this light's direction by hand`);
+      } else if (el.enclosingTransform) {
+        // A wrapping group's rotation changes the angle too (translation
+        // doesn't). Our exporter never groups aim lines, but an editor might.
+        const g1 = applyTransformToPoint(el.enclosingTransform, p1.x, p1.y);
+        const g2 = applyTransformToPoint(el.enclosingTransform, p2.x, p2.y);
+        if (!g1.unsupported && !g2.unsupported) { p1 = g1; p2 = g2; }
+      }
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) {
+        warn(`${name}: aim line has zero length — skipping it (this light will come out non-directional)`);
+        continue;
+      }
+      const deg = Math.round((((Math.atan2(dy, dx) * 180) / Math.PI) % 360 + 360) % 360) % 360;
+      const index = ai.index == null ? 1 : ai.index;
+      if (!aimsByRoom.has(ai.roomId)) aimsByRoom.set(ai.roomId, new Map());
+      const byDevice = aimsByRoom.get(ai.roomId);
+      if (!byDevice.has(ai.deviceId)) byDevice.set(ai.deviceId, new Map());
+      const byIndex = byDevice.get(ai.deviceId);
+      if (byIndex.has(index)) {
+        warn(`${name}: more than one aim line resolves to position ${index} — keeping the last one in document order (${deg}deg)`);
+      }
+      byIndex.set(index, deg);
     }
   }
 
@@ -622,18 +740,24 @@ function main() {
             const bi = b.index == null ? 0 : b.index;
             return ai - bi;
           });
-          // The SVG circle only carries position; emission metadata (aim,
-          // spread, ...) lives in rooms.json and rides through the export's
-          // embedded metadata blob -- merge those extra fields back so an
-          // Illustrator round-trip doesn't strip them.
+          // The SVG circle only carries position; extra emission metadata
+          // (spread, ...) lives in rooms.json and rides through the export's
+          // embedded metadata blob -- merge those fields back so an
+          // Illustrator round-trip doesn't strip them. `aim` is the one
+          // exception: it lives in the fixture-aim arrow <line>s, which are
+          // the source of truth -- no arrow, no aim -- so deleting an arrow
+          // in the editor genuinely un-aims the light instead of the stale
+          // metadata value resurrecting it.
           const rel = sorted.map((p, i) => {
             const out = { x: round(p.x - room.rect.x), y: round(p.y - room.rect.y) };
             const fb = lookup.fixture(room.id, deviceId, i);
             if (fb) {
               for (const [k, v] of Object.entries(fb)) {
-                if (k !== 'x' && k !== 'y') out[k] = v;
+                if (k !== 'x' && k !== 'y' && k !== 'aim') out[k] = v;
               }
             }
+            const aim = aimsByRoom.get(room.id)?.get(deviceId)?.get(i + 1);
+            if (aim !== undefined) out.aim = aim;
             return out;
           });
           fixtures[deviceId] = rel.length > 1 ? rel : rel[0];

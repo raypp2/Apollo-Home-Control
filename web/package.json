@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:pi": "APOLLO_API_TARGET=http://pi.local:80 vite --port 5175 --strictPort",
     "build": "vite build",
     "preview": "vite preview"
   },

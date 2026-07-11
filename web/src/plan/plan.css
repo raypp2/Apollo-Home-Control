@@ -109,8 +109,9 @@
   transition: opacity 0.4s ease;
 }
 
-/* Directional light layer: per-room svg of aimed-fixture glows (GlowLayer).
-   Sits above the centered wash, below furniture outlines and fixture dots. */
+/* Per-fixture light layer: per-room svg of fixture glows (GlowLayer) --
+   directional beams and omnidirectional pools. Sits above the fallback
+   centered wash, below furniture outlines and fixture dots. */
 .plan-room__lightlayer {
   position: absolute;
   inset: 0;

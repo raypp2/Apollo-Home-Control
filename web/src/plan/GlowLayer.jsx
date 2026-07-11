@@ -1,12 +1,15 @@
-// Apollo v2 dashboard -- per-fixture directional light layer.
+// Apollo v2 dashboard -- per-fixture light layer.
 //
-// Replaces the room-centered occupancy wash for fixture positions that carry
-// emission metadata in rooms.json. A fixture position may extend {x,y} with:
+// Replaces the room-centered occupancy wash: every fixture position emits
+// from where the lamp actually sits. A fixture position may extend {x,y}
+// with:
 //   aim     degrees the lamp points, screen coords on the plan: 0 = +x
 //           (toward the right wall), 90 = +y (down), 270 = up.
 //   spread  full beam angle in degrees (optional, default 70).
-// For each such fixture that is on, three stacked shapes render in the
-// device's live color, clipped to the room by the svg viewport:
+// A position WITHOUT an aim is a plain omnidirectional lamp: a single
+// radial pool centered on the fixture dot (OmniGlow).
+// A position WITH an aim renders three stacked shapes in the device's live
+// color, clipped to the room by the svg viewport (FixtureGlow):
 //   1. a beam wedge from the fixture to where its aim ray hits the room wall,
 //   2. a bright elongated pool on that wall,
 //   3. a large dim "bounce" gradient centered on the wall hit, spilling back
@@ -114,9 +117,39 @@ function FixtureGlow({ pos, view, idBase, w, h }) {
 }
 
 /**
- * The room's light layer: one <svg> over the room rect holding every aimed
- * fixture's glow. Only mounted when the room has aimed fixtures (Room.jsx
- * filters), so plain rooms pay nothing.
+ * One non-aimed fixture position's glow: a single radial pool centered on
+ * the lamp itself, emitting 360deg. Sized to the room so one lamp still
+ * reads as lighting the space, not a spotlight dot.
+ * @param {{ pos: object, view: object, idBase: string, w: number, h: number }} props
+ */
+function OmniGlow({ pos, view, idBase, w, h }) {
+  const color = view.color || DEFAULT_GLOW;
+  const r = Math.max(w, h) * 0.55;
+  const intensity = view.on ? 0.45 + 0.55 * (view.level / 100) : 0;
+
+  return (
+    <g class="plan-glow" style={{ opacity: intensity }}>
+      <defs>
+        <radialGradient id={`${idBase}-omni`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color={withAlpha(color, 0.6)} />
+          <stop offset="40%" stop-color={withAlpha(color, 0.26)} />
+          <stop offset="100%" stop-color={withAlpha(color, 0)} />
+        </radialGradient>
+      </defs>
+      <circle
+        cx={pos.x} cy={pos.y} r={r}
+        fill={`url(#${idBase}-omni)`}
+        style={{ mixBlendMode: 'screen' }}
+      />
+    </g>
+  );
+}
+
+/**
+ * The room's light layer: one <svg> over the room rect holding every
+ * fixture's glow -- directional (FixtureGlow) when the position has an aim,
+ * omnidirectional pool (OmniGlow) otherwise. Only mounted when the room has
+ * fixture dots (Room.jsx filters), so bare rooms pay nothing.
  * @param {{ room: object, fixtures: Array<{deviceId:string,pos:object,key:string}> }} props
  */
 export default function GlowLayer({ room, fixtures }) {
@@ -134,8 +167,9 @@ export default function GlowLayer({ room, fixtures }) {
       {fixtures.map(({ deviceId, pos, key }) => {
         const entry = entries.find((e) => e.id === deviceId);
         if (!entry) return null;
+        const Glow = pos.aim != null ? FixtureGlow : OmniGlow;
         return (
-          <FixtureGlow
+          <Glow
             key={key}
             pos={pos}
             view={commands.deviceView(entry)}
