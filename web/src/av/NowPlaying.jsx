@@ -72,10 +72,15 @@ function AlbumArt({ src }) {
  * @param {object} props.spotifyEntry - the Spotify device/config entry, passed
  *   through to commands.spotifyPlayPause (not read from the store -- that's
  *   the now-playing payload, a separate thing from the device entry).
+ * @param {boolean} [props.receiverOn] - whether the Anthem receiver is
+ *   currently on. Spotify's own "now playing" state persists on Spotify's
+ *   servers regardless of whether anything in the room is actually audible,
+ *   so with the receiver off this renders the idle state even if Spotify
+ *   reports an active track -- there's nothing to actually be playing here.
  */
-function NowPlaying({ spotifyEntry }) {
+function NowPlaying({ spotifyEntry, receiverOn = true }) {
   const nowPlaying = store.spotify.value;
-  const nothingPlaying = !nowPlaying || nowPlaying.reachable === false;
+  const nothingPlaying = !receiverOn || !nowPlaying || nowPlaying.reachable === false;
 
   return (
     <div

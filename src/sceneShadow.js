@@ -413,13 +413,76 @@ function _handleDeviceState(topic, payload, _raw, _retain) {
 }
 
 /**
- * Subscribes to the canonical device state topic filter. Safe to call once
- * at startup; this module never sends device commands, so it's safe in
- * dry-run and with the broker down (mqttClient queues/retries on its own).
+ * Returns the current shadow state for a scene -- {active, activatedAt} --
+ * or undefined if this scene has never been activated since the process
+ * started. Callers (e.g. webServer.js's /list/lightingScenes) should treat
+ * undefined as active:false/activatedAt unknown rather than an error: it just
+ * means Apollo hasn't seen this scene fire yet this run. Deliberately omits
+ * the fingerprint -- that's drift-detection internals, not for HTTP clients.
+ * @param {string} sceneId
+ * @returns {{active: boolean, activatedAt: number}|undefined}
+ */
+function sceneState(sceneId) {
+    const record = sceneStateById.get(sceneId);
+    if (!record) {
+        return undefined;
+    }
+    return { active: record.active, activatedAt: record.activatedAt };
+}
+
+/**
+ * Returns the current shadow state for a macro -- {active, activatedAt} --
+ * or undefined if this macro has never been activated since the process
+ * started. Mirrors sceneState() above (see its doc comment); macros never
+ * carry a fingerprint in the first place.
+ * @param {string} macroId
+ * @returns {{active: boolean, activatedAt: number}|undefined}
+ */
+function macroState(macroId) {
+    const record = macroStateById.get(macroId);
+    if (!record) {
+        return undefined;
+    }
+    return { active: record.active, activatedAt: record.activatedAt };
+}
+
+/**
+ * Seeds a shadow map from this module's OWN retained scene/macro topics on
+ * startup, so /list active state survives a process restart instead of
+ * reporting everything inactive until the next activation. First write wins:
+ * once an id has an in-memory record (a live activation this run, or an
+ * earlier retained replay), later messages on these topics are ignored --
+ * they're either our own just-published echoes or older than what we hold.
+ * Fingerprints are deliberately not restored; drift detection re-learns on
+ * the next activation.
+ * @param {Map<string, object>} stateById - sceneStateById or macroStateById
+ * @param {string} topic - apollo/home/{scene,macro}/<id>/state
+ * @param {*} payload
+ */
+function _seedFromRetained(stateById, topic, payload) {
+    if (!payload || typeof payload !== 'object' || typeof payload.active !== 'boolean') {
+        return;
+    }
+    const parts = topic.split('/');
+    const id = parts.length >= 4 ? parts[3] : null;
+    if (!id || stateById.has(id)) {
+        return;
+    }
+    stateById.set(id, { active: payload.active, activatedAt: payload.activatedAt, fingerprint: {}, source: 'retained' });
+}
+
+/**
+ * Subscribes to the canonical device state topic filter, plus this module's
+ * own retained scene/macro state topics (restart seeding -- see
+ * _seedFromRetained). Safe to call once at startup; this module never sends
+ * device commands, so it's safe in dry-run and with the broker down
+ * (mqttClient queues/retries on its own).
  */
 function start() {
     ensureInit();
     doSubscribe('apollo/+/+/+/state', _handleDeviceState);
+    doSubscribe('apollo/home/scene/+/state', (topic, payload) => _seedFromRetained(sceneStateById, topic, payload));
+    doSubscribe('apollo/home/macro/+/state', (topic, payload) => _seedFromRetained(macroStateById, topic, payload));
 }
 
 /**
@@ -443,6 +506,8 @@ module.exports = {
     start,
     onSceneActivated,
     onMacroActivated,
+    sceneState,
+    macroState,
     _init,
     _handleDeviceState,
     _resetForTesting,

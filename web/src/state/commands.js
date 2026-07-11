@@ -58,6 +58,19 @@ export function positionOf(entry) {
 }
 
 /**
+ * Current 0-100 position of one individually-named shade ('one'|'two'|
+ * 'three'), from `entry.live.positions` -- the bridge only starts publishing
+ * this object once a shade has moved, so it may be entirely absent.
+ * @param {object} entry
+ * @param {string} key - 'one'|'two'|'three'
+ * @returns {number|null} null when unknown (never confirmed yet)
+ */
+export function positionOfShade(entry, key) {
+  const p = entry && entry.live && entry.live.positions && entry.live.positions[key];
+  return typeof p === 'number' ? p : null;
+}
+
+/**
  * Drag-commit policy for this device: 'live' streams level changes to the
  * backend during the drag; 'release' updates only the local display during the
  * drag and sends a single command on release (Insteon can't absorb a stream).
@@ -166,17 +179,82 @@ export function previewPosition(entry, val) {
   store.updateDevice(entry.stateTopic, (e) => ({ ...e, live: { ...e.live, position: v } }));
 }
 
-/** Commit a shade position: optimistic + send + trace. */
+/**
+ * Commit the GROUP shade position: optimistic + send + trace. Command grammar
+ * is the named-key form (`/api/DEVICES/<id>/all/<0-100>`), not a bare
+ * position -- see src/handler.js's Somfy-Bridge case + src/somfyBridge.js.
+ * Optimistically mirrors the new position onto all three per-shade slots too
+ * (a best guess -- the bridge's own group command doesn't touch `positions`
+ * itself; the real per-shade MQTT events correct this shortly after).
+ */
 export function commitPosition(entry, val) {
   const v = clamp(val);
-  fire(entry, [String(v)], { position: v }, `${entry.title} → ${v}%`);
+  fire(entry, ['all', String(v)], { position: v, positions: { one: v, two: v, three: v } },
+    `${entry.title} → ${v}%`);
 }
 
-/** Tap a shade: toggle fully open (0) / closed (100) by its current half. */
+/**
+ * Explicitly open (position 0) every shade via the group command.
+ * `/api/DEVICES/<id>/all/OFF` (OFF = up/open, per the Somfy grammar).
+ */
+export function openAllShades(entry) {
+  fire(entry, ['all', 'OFF'], { position: 0, positions: { one: 0, two: 0, three: 0 } },
+    `${entry.title} open`);
+}
+
+/**
+ * Explicitly close (position 100) every shade via the group command.
+ * `/api/DEVICES/<id>/all/ON` (ON = down/closed, per the Somfy grammar).
+ */
+export function closeAllShades(entry) {
+  fire(entry, ['all', 'ON'], { position: 100, positions: { one: 100, two: 100, three: 100 } },
+    `${entry.title} closed`);
+}
+
+/**
+ * Tap the shade row: toggle ALL shades together. Open (all -> OFF) if the
+ * group is anywhere closed (`position` > 0); otherwise close (all -> ON).
+ */
 export function toggleShade(entry) {
-  const next = positionOf(entry) < 50 ? 100 : 0;
-  fire(entry, [String(next)], { position: next },
-    `${entry.title} ${next === 0 ? 'open' : 'closed'}`);
+  if (positionOf(entry) > 0) {
+    openAllShades(entry);
+  } else {
+    closeAllShades(entry);
+  }
+}
+
+/** Update one named shade's local display without sending (drag preview). */
+export function previewShadePosition(entry, key, val) {
+  const v = clamp(val);
+  store.updateDevice(entry.stateTopic, (e) => ({
+    ...e,
+    live: { ...e.live, positions: { ...(e.live && e.live.positions), [key]: v } },
+  }));
+}
+
+/**
+ * Commit one named shade ('one'|'two'|'three') to a specific 0-100 position:
+ * optimistic + send + trace. `/api/DEVICES/<id>/<key>/<0-100>`.
+ */
+export function commitShadePosition(entry, key, val) {
+  const v = clamp(val);
+  fire(entry, [key, String(v)],
+    { positions: { ...(entry.live && entry.live.positions), [key]: v } },
+    `${entry.title} ${key} → ${v}%`);
+}
+
+/**
+ * Tap one named shade: toggle it open/closed by its OWN last-known position
+ * (unknown treated as open/0, so a first tap closes it).
+ * `/api/DEVICES/<id>/<key>/ON|OFF`.
+ */
+export function toggleShadeOne(entry, key) {
+  const pos = positionOfShade(entry, key) || 0;
+  const opening = pos > 0;
+  const nextPos = opening ? 0 : 100;
+  fire(entry, [key, opening ? 'OFF' : 'ON'],
+    { positions: { ...(entry.live && entry.live.positions), [key]: nextPos } },
+    `${entry.title} ${key} ${opening ? 'open' : 'closed'}`);
 }
 
 function clamp(v) {

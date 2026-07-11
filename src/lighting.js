@@ -64,13 +64,66 @@ function lighting_device_command (operation_num, device, lighting_command, param
     if(lights_new[i].id.toUpperCase() == device.toUpperCase()) {
       switch(lights_new[i].type) {
         case 'insteon':
-          insteon_device_command(operation_num, lights_new[i].address, lighting_command);
-          if(lighting_command=="OFF"){
-              lights_new[i].checked = false;
-              lights_new[i].status = 0;
-          } else if(lighting_command=="ON"){
-              lights_new[i].checked = true;
-              lights_new[i].status = 100;
+          {
+            // Combined fixtures (e.g. "hall", "officeDesk"): a Hue color bulb
+            // sits physically behind an Insteon wall switch. ON/OFF/FAST-ON/
+            // FAST-OFF stay on the Insteon switch (below, same as any other
+            // insteon light); COLOR and numeric dim levels are rerouted to
+            // the Hue group instead, since the switch itself can't do either.
+            // See config/lights.json's `hueGroup`/`isColor` fields.
+            const light = lights_new[i];
+            const cmdUpper = String(lighting_command).toUpperCase();
+            const isColorCmd = cmdUpper === 'COLOR';
+            const isBrightnessCmd = !isColorCmd && lighting_command !== '' && !isNaN(lighting_command);
+
+            if (light.hueGroup && (isColorCmd || isBrightnessCmd)) {
+              // The Insteon switch being off means the bulbs have no power --
+              // a dim/color command implies power-on, so send the Insteon ON
+              // first (fire both; Insteon first so the bulbs are actually
+              // powered by the time the Hue command reaches them).
+              if (light.checked !== true) {
+                console.log("%d - Combined fixture '%s': Insteon switch not known ON, sending Insteon ON before Hue %s", operation_num, light.id, isColorCmd ? 'COLOR' : 'brightness');
+                insteon_device_command(operation_num, light.address, 'ON');
+                light.checked = true;
+                light.status = 100;
+              }
+
+              if (isColorCmd) {
+                console.log("%d - Combined fixture '%s': routing COLOR #%s to Hue group #%s", operation_num, light.id, param1, light.hueGroup);
+                hue_group_command(operation_num, light.hueGroup, 'COLOR', param1);
+              } else {
+                console.log("%d - Combined fixture '%s': routing brightness %s to Hue group #%s", operation_num, light.id, lighting_command, light.hueGroup);
+                hue_group_command(operation_num, light.hueGroup, lighting_command);
+              }
+
+              // Optimistic state for the combined fixture itself.
+              // hue_group_command's own optimistic publish only covers
+              // hue-group-TYPED config entries (findLightByGroup), so it
+              // skips combined fixtures; and the Hue SSE listener can't fill
+              // the gap for a pure color change (grouped_light events fire
+              // on on/dimming deltas, not color-only ones). Without this the
+              // row/floorplan never learn the color. publishState merges
+              // per-topic, so power stays whatever the Insteon side last
+              // published (forced ON above when the switch wasn't known on).
+              try {
+                const optimistic = isColorCmd
+                  ? { power: 'ON', color: '#' + String(param1).replace(/^#/, '').toLowerCase() }
+                  : { power: 'ON', brightness: parseInt(lighting_command, 10) };
+                require('./mqttTopics').publishState(light, optimistic, 'command');
+              } catch (e) {
+                console.log("%d - Combined fixture '%s': optimistic publish skipped: %s", operation_num, light.id, e && e.message);
+              }
+              break;
+            }
+
+            insteon_device_command(operation_num, light.address, lighting_command);
+            if(lighting_command=="OFF"){
+                light.checked = false;
+                light.status = 0;
+            } else if(lighting_command=="ON"){
+                light.checked = true;
+                light.status = 100;
+            }
           }
           break;
         case 'hue-group':

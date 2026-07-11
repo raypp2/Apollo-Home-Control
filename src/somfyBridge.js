@@ -32,20 +32,62 @@ const mqttTopics = require('./mqttTopics');
 
 const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
 
-// The single shade id whose position we track as the canonical state for the
-// "shades" config entry -- see module doc / mqtt-implementation-detail.md.
-// Shade ids 1-3 are the individual windows paired to this group; only 4
-// ("All Windows") is tracked for now.
-const TRACKED_SHADE_ID = '4';
+// Command-map alias keys that all point at the group shade id (not an
+// individual shade) -- see shadeIdMapping() below. Excluded when deriving
+// the id->friendly-name map for the `positions` object.
+const NON_INDIVIDUAL_ALIASES = new Set(['on', 'off', 'all']);
 
-// Shade ids whose position/direction events we've already logged as ignored --
-// logged once per id (not per message), same pattern as lightingShelly's
-// loggedUnknownDevices.
+// Fallback group shade id used only when a config entry has no `commands`
+// map to derive one from (defensive -- devices.json's real "shades" entry
+// always has one; this just keeps a minimal/legacy entry from breaking).
+const DEFAULT_GROUP_ID = '4';
+
+// Per-entry cache of last-known shade positions, keyed by the entry's
+// canonical `.../state` topic (same key mqttTopics.js's own stateCache
+// uses). Holds { position, positions } so every publish -- whether it's the
+// group shade or a single named shade that changed -- can carry the FULL
+// `positions` object; mqttTopics.publishState()'s merge is shallow, so a
+// partial `positions: {one: 40}` would clobber `two`/`three` if we didn't
+// keep our own complete copy to republish each time.
+const positionsCache = new Map();
+
+// Shade ids whose position/direction events we've already logged as ignored
+// (unrecognized by shadeIdMapping()) -- logged once per id (not per
+// message), same pattern as lightingShelly's loggedUnknownDevices.
 const loggedIgnoredShadeIds = new Set();
 
 // Topic prefixes (device topics, not config entries) whose native status
 // didn't resolve to a config entry -- logged once per prefix.
 const loggedUnknownDevices = new Set();
+
+/**
+ * Derives the shade-id -> role mapping for a devices.json "shades" entry
+ * PURELY from its own `commands` map -- never hardcoded here, so a
+ * re-wired/rebound ESPSomfy channel just needs its config updated, not this
+ * module. `commands` looks like {on:"4", off:"4", all:"4", one:"3", two:"2",
+ * three:"1"}: "on"/"off"/"all" are aliases for the group shade id (id 4 in
+ * the example), and the remaining keys ("one"/"two"/"three") are individual
+ * shade names -> ESPSomfy shade ids. Falls back to DEFAULT_GROUP_ID (and an
+ * empty individual-shade map) when the entry has no usable `commands` map.
+ * @param {object} entry - a devices.json "Somfy-Bridge" entry
+ * @returns {{groupId: string, idToName: Map<string,string>}}
+ */
+function shadeIdMapping(entry) {
+    const commands = (entry && entry.commands) || {};
+    const groupId = commands.all !== undefined ? String(commands.all)
+        : commands.on !== undefined ? String(commands.on)
+            : DEFAULT_GROUP_ID;
+
+    const idToName = new Map();
+    for (const [name, id] of Object.entries(commands)) {
+        if (NON_INDIVIDUAL_ALIASES.has(name)) {
+            continue;
+        }
+        idToName.set(String(id), name);
+    }
+
+    return { groupId, idToName };
+}
 
 function send_somfy_command (address, id, command, operation_num) {
 
@@ -107,13 +149,6 @@ function send_somfy_command (address, id, command, operation_num) {
   // corrects) this within seconds, per Stage 2 of the MQTT plan. Map the
   // command to the position it should settle at; "STOP" and anything else
   // unrecognized have no predictable resulting position, so we skip.
-  //
-  // NOTE: this optimistic publish is applied regardless of which shade id
-  // (1-3 or 4/"all") the command actually targeted, because canonical state
-  // for the "shades" config entry only ever tracks the group (shade 4). The
-  // common paths (Alexa / the config's "all" command) target shade 4 anyway,
-  // so this is acceptable for now -- see
-  // documentation/mqtt-implementation-detail.md Stage 2, ESPSomfy subsection.
   let expectedPosition;
   if (command === "ON" || !command) {
       // A falsy command means the dispatch above assumed ON/down (see the
@@ -130,9 +165,50 @@ function send_somfy_command (address, id, command, operation_num) {
   }
 
   const entry = findDeviceByAddress(address);
-  if (entry) {
-      mqttTopics.publishState(entry, { position: expectedPosition }, 'command');
+  if (!entry) {
+      return;
   }
+
+  // Which shade id did this command target -- the group, or one of the
+  // individually-named shades? Only touch the field that actually changed:
+  // the top-level `position` for a group command, or that shade's entry
+  // inside `positions` for an individual one -- see shadeIdMapping() and the
+  // positionsCache module doc comment above.
+  const mapping = shadeIdMapping(entry);
+  const cacheKey = mqttTopics.topicFor(entry, 'state');
+  const cached = positionsCache.get(cacheKey) || {};
+
+  const state = {};
+  if (String(id) === mapping.groupId) {
+      cached.position = expectedPosition;
+      state.position = expectedPosition;
+      // A group-channel RTS broadcast physically moves EVERY member shade,
+      // but Somfy RTS is one-way and ESPSomfy dead-reckons each channel
+      // independently -- it emits no member position events for a group
+      // command, so the members' last-known positions would go stale
+      // (live-verified: open-all left a shade's cached position at 20).
+      // Optimistically move every named member along with the group.
+      if (mapping.idToName.size > 0) {
+          cached.positions = { ...(cached.positions || {}) };
+          for (const name of mapping.idToName.values()) {
+              cached.positions[name] = expectedPosition;
+          }
+      }
+  } else if (mapping.idToName.has(String(id))) {
+      cached.positions = { ...(cached.positions || {}), [mapping.idToName.get(String(id))]: expectedPosition };
+  } else {
+      // Unrecognized shade id -- nothing we can confidently update.
+      return;
+  }
+
+  positionsCache.set(cacheKey, cached);
+  if (cached.positions) {
+      // Always attach the full cache, even for a group-only change, so this
+      // publish is self-contained regardless of mqttTopics' own merge.
+      state.positions = cached.positions;
+  }
+
+  mqttTopics.publishState(entry, state, 'command');
 }
 
 /**
@@ -207,10 +283,14 @@ function logUnknownDevice(topic, prefix) {
 /**
  * Handler for `apollo/+/somfy/shades/+/position`. Payload is a plain number
  * 0-100 (0 = open/up, 100 = closed/down -- matches our canonical `position`
- * semantics). Only shade id 4 ("All Windows") is tracked as canonical state
- * for the single "shades" config entry; ids 1-3 are individual shades and are
- * ignored (logged at most once each). Malformed payloads (non-numeric,
- * out of range) are logged and ignored -- never throws.
+ * semantics). ALL four shade ids are tracked: the group id keeps updating
+ * the top-level `position` field (unchanged meaning, for backward compat),
+ * and the three individually-named shades update their entry inside the
+ * `positions` object (see shadeIdMapping()/positionsCache above) -- every
+ * publish carries the complete `positions` object, not just the shade that
+ * just changed. An id this entry's `commands` map doesn't recognize is
+ * logged at most once and otherwise ignored. Malformed payloads
+ * (non-numeric, out of range) are logged and ignored -- never throws.
  * @param {string} topic
  * @param {*} payload
  */
@@ -218,11 +298,7 @@ function _handlePosition(topic, payload) {
     const parts = topic.split('/');
     const shadeId = parts.length >= 5 ? parts[4] : undefined;
 
-    if (shadeId !== TRACKED_SHADE_ID) {
-        if (shadeId && !loggedIgnoredShadeIds.has(shadeId)) {
-            loggedIgnoredShadeIds.add(shadeId);
-            console.log('Somfy MQTT: ignoring position for untracked shade id "%s" (topic %s)', shadeId, topic);
-        }
+    if (!shadeId) {
         return;
     }
 
@@ -238,7 +314,30 @@ function _handlePosition(topic, payload) {
         return;
     }
 
-    mqttTopics.publishState(entry, { position }, 'event');
+    const mapping = shadeIdMapping(entry);
+    const cacheKey = mqttTopics.topicFor(entry, 'state');
+    const cached = positionsCache.get(cacheKey) || {};
+
+    const state = {};
+    if (shadeId === mapping.groupId) {
+        cached.position = position;
+        state.position = position;
+    } else if (mapping.idToName.has(shadeId)) {
+        cached.positions = { ...(cached.positions || {}), [mapping.idToName.get(shadeId)]: position };
+    } else {
+        if (!loggedIgnoredShadeIds.has(shadeId)) {
+            loggedIgnoredShadeIds.add(shadeId);
+            console.log('Somfy MQTT: ignoring position for untracked shade id "%s" (topic %s)', shadeId, topic);
+        }
+        return;
+    }
+
+    positionsCache.set(cacheKey, cached);
+    if (cached.positions) {
+        state.positions = cached.positions;
+    }
+
+    mqttTopics.publishState(entry, state, 'event');
 }
 
 /**

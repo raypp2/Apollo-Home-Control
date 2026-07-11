@@ -94,6 +94,14 @@
     "type": "insteon",
     "address": "XXXXXX",
     "status": "",
+    // Combined fixture: a Hue color bulb (or group of bulbs) physically
+    // wired behind this Insteon switch. When both fields are present, ON/OFF
+    // stay routed to the Insteon switch as usual; COLOR and numeric
+    // dim-level commands are instead rerouted to the Hue group named here
+    // (see lighting.js's insteon-branch hueGroup routing). Omit both fields
+    // for a plain Insteon light with no Hue bulbs behind it.
+    "hueGroup": "1",   // Philips Hue bridge group id (v1 API group number, a string)
+    "isColor": true,   // tells the dashboard to render this as a color row
     "alexa": {
 		"invocations":["Hall", "Hallway"],
         "displayCategories": ["LIGHT"],

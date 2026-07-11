@@ -63,6 +63,26 @@
  *              the partial results, but it also parses a single fully
  *              concatenated buffer (e.g. `Z1POW1;Z1VOL-36;Z1INP5;Z1MUT0;`)
  *              just as well, which is how it's unit-tested directly.
+ *
+ * @description (Live unsolicited status) The Anthem also pushes state on its
+ *              OWN (e.g. the physical volume knob), outside any command/
+ *              response round trip -- previously silently dropped, since
+ *              DeviceConnection only ever forwarded bytes to whatever command
+ *              was awaiting a response. registerUnsolicitedHandler() wires
+ *              every speaker-block device's connection to
+ *              DeviceConnection.setUnsolicitedHandler(): each framed token
+ *              that arrives with no command in-flight is parsed with
+ *              parseAnthemSpeakerState() and published with source:'event',
+ *              publishing only the field(s) that token actually contained
+ *              (mqttTopics.publishState merges partials, so this never
+ *              fabricates the others). recordLastPower()/pollIntervalFor()
+ *              track each speaker device's last-known power (from commands,
+ *              polls, AND these unsolicited events) so startIpPowerPoller()
+ *              can poll speaker devices every 10s while believed ON and fall
+ *              back to the normal 60s otherwise -- unsolicited events make
+ *              polling a safety net rather than the only source of truth, but
+ *              some Anthem firmware doesn't push every field, so the poll
+ *              stays as a backstop.
  */
 
 const { getConnection } = require('./deviceConnection');
@@ -70,13 +90,21 @@ const mqttTopics = require('./mqttTopics');
 
 const DRY_RUN = process.env.APOLLO_DRY_RUN === '1';
 
-const POWER_POLL_INTERVAL_MS = 60000; // how often each device's power state is re-polled
-const POWER_POLL_STAGGER_MS = 5000;   // spread each device's poll start so they don't all fire at once
+const POWER_POLL_INTERVAL_MS = 60000;      // how often each device's power state is re-polled (default / power OFF-or-unknown)
+const POWER_POLL_FAST_INTERVAL_MS = 10000; // faster fallback poll for speaker (Anthem) devices while believed powered ON
+const POWER_POLL_STAGGER_MS = 5000;        // spread each device's poll start so they don't all fire at once
 
 // Devices with a command currently in flight (address:port -> true), so the
 // periodic poller can skip a cycle rather than race a real command's own
 // power-check state machine.
 const inFlight = new Map();
+
+// Last-known power ('ON'|'OFF') per device (address:port -> string), fed by
+// every source that learns it -- command responses, the periodic poller, AND
+// (Live unsolicited status) unsolicited push events -- so the poller can
+// choose a faster interval for a speaker device believed to be on right now.
+// See the module doc comment.
+const lastKnownPower = new Map();
 
 /**
  * Read live (not cached at module load) so tests can flip
@@ -101,6 +129,37 @@ function clearInFlight(device_info) {
 
 function isInFlight(device_info) {
 	return inFlight.get(inFlightKey(device_info)) === true;
+}
+
+/**
+ * Records a device's last-known power state, fed from every source that
+ * learns it (command responses, polls, unsolicited push events). Ignores
+ * anything that isn't a clean 'ON'/'OFF' (e.g. null from an unparseable
+ * response) rather than clobbering a previously-known value with "unknown".
+ * @param {object} device_info
+ * @param {*} power
+ */
+function recordLastPower(device_info, power) {
+	if (power === 'ON' || power === 'OFF') {
+		lastKnownPower.set(inFlightKey(device_info), power);
+	}
+}
+
+/**
+ * Chooses the periodic-poll interval for a device: speaker (Anthem) devices
+ * believed to be powered ON right now poll faster (POWER_POLL_FAST_INTERVAL_MS)
+ * as a safety net alongside their unsolicited push events -- other devices,
+ * and speaker devices not known to be ON, use the normal
+ * POWER_POLL_INTERVAL_MS.
+ * @param {object} device_info
+ * @returns {number}
+ */
+function pollIntervalFor(device_info) {
+	if (!device_info.speaker) {
+		return POWER_POLL_INTERVAL_MS;
+	}
+	const power = lastKnownPower.get(inFlightKey(device_info));
+	return power === 'ON' ? POWER_POLL_FAST_INTERVAL_MS : POWER_POLL_INTERVAL_MS;
 }
 
 /**
@@ -270,6 +329,41 @@ function registerStatusPublisher(conn, device_info) {
 }
 
 /**
+ * (Live unsolicited status) Registered once per DeviceConnection instance,
+ * for devices with a `speaker` block only (currently just the Anthem) --
+ * the projector has no push-on-its-own behavior worth listening for. Wires
+ * DeviceConnection.setUnsolicitedHandler() so every framed token that
+ * arrives with no command currently in-flight (e.g. the physical volume
+ * knob being turned) is parsed with parseAnthemSpeakerState() and published
+ * immediately, source:'event'. Only publishes the field(s) actually present
+ * in that token -- mqttTopics.publishState() merges partial updates onto the
+ * cached state, so a volume-only token never fabricates power/input/mute.
+ * Also feeds recordLastPower() so the adaptive poller (pollIntervalFor()) can
+ * react to a push-driven power change, not just its own polls.
+ * @param {import('./deviceConnection').DeviceConnection} conn
+ * @param {object} device_info
+ */
+function registerUnsolicitedHandler(conn, device_info) {
+	if (!device_info || !device_info.speaker) {
+		return;
+	}
+	if (conn._ipUnsolicitedRegistered) {
+		return;
+	}
+	conn._ipUnsolicitedRegistered = true;
+
+	conn.setUnsolicitedHandler((token) => {
+		const parsed = parseAnthemSpeakerState(token);
+		if (Object.keys(parsed).length === 0) {
+			return;
+		}
+		recordLastPower(device_info, parsed.power);
+		console.log('Unsolicited update from %s: %s -> %s', device_info.id || device_info.address, token, JSON.stringify(parsed));
+		mqttTopics.publishState(device_info, parsed, 'event');
+	}, deriveTerminator(device_info));
+}
+
+/**
  * Sends each `~`-delimited piece of `device_cmd` in order through the shared
  * connection, spaced automatically by DeviceConnection (replaces the old
  * 500ms*n setTimeout chain).
@@ -319,6 +413,7 @@ async function send_ip_command(debug_id, device_info, device_cmd, check_for_powe
 			terminator: deriveTerminator(device_info),
 		});
 		registerStatusPublisher(conn, device_info);
+		registerUnsolicitedHandler(conn, device_info);
 
 		let checkForPower = check_for_power;
 		let power_query, power_on_delay, off_delay, device_on;
@@ -382,6 +477,7 @@ async function send_ip_command(debug_id, device_info, device_cmd, check_for_powe
 			}
 
 			if (resultingPowerState) {
+				recordLastPower(device_info, resultingPowerState);
 				const extras = await queryAnthemSpeakerExtras(conn, device_info);
 				mqttTopics.publishState(device_info, { power: resultingPowerState, ...extras }, 'command');
 			}
@@ -424,9 +520,11 @@ async function pollDevicePower(device) {
 			terminator: deriveTerminator(device),
 		});
 		registerStatusPublisher(conn, device);
+		registerUnsolicitedHandler(conn, device);
 		const response = await conn.send(device.power_commands.power_query, { expectResponse: true });
 		const powerState = parsePowerResponse(device, response);
 		if (powerState) {
+			recordLastPower(device, powerState);
 			const extras = await queryAnthemSpeakerExtras(conn, device);
 			mqttTopics.publishState(device, { power: powerState, ...extras }, 'poll');
 		}
@@ -436,13 +534,21 @@ async function pollDevicePower(device) {
 }
 
 /**
- * Starts a 60s power-state poll for every ip_control device that has
+ * Starts a power-state poll for every ip_control device that has
  * power_commands.power_query configured, staggering each device's start time
  * so they don't all hit the network at once. Timers are unref'd (never keep
  * the process alive on their own) and skipped entirely in dry-run or when the
  * persistent-connections rollback flag is set (the legacy per-command path
  * has no long-lived connection to poll through, and re-opening a fresh socket
- * every 60s just to check power defeats the point of this stage).
+ * every cycle just to check power defeats the point of this stage).
+ *
+ * (Live unsolicited status) Each device reschedules its OWN next poll after
+ * every cycle (a self-rescheduling setTimeout, not a fixed setInterval) so
+ * the interval can adapt: pollIntervalFor() picks POWER_POLL_FAST_INTERVAL_MS
+ * for a speaker (Anthem) device currently believed powered ON, and
+ * POWER_POLL_INTERVAL_MS otherwise -- unsolicited push events are the
+ * primary source of truth for a speaker device while it's on, this poll is
+ * just the safety net underneath them.
  */
 function startIpPowerPoller() {
 	if (DRY_RUN || !persistentConnectionsEnabled()) {
@@ -455,10 +561,18 @@ function startIpPowerPoller() {
 
 	pollable.forEach((device, i) => {
 		const startDelay = i * POWER_POLL_STAGGER_MS;
-		const kickoff = setTimeout(() => {
-			pollDevicePower(device);
-			const interval = setInterval(() => pollDevicePower(device), POWER_POLL_INTERVAL_MS);
-			interval.unref();
+
+		const scheduleNext = () => {
+			const timer = setTimeout(async () => {
+				await pollDevicePower(device);
+				scheduleNext();
+			}, pollIntervalFor(device));
+			timer.unref();
+		};
+
+		const kickoff = setTimeout(async () => {
+			await pollDevicePower(device);
+			scheduleNext();
 		}, startDelay);
 		kickoff.unref();
 	});
@@ -590,6 +704,9 @@ module.exports = {
     parseAnthemSpeakerState,
     queryAnthemSpeakerExtras,
     deriveTerminator,
+    registerUnsolicitedHandler,
+    recordLastPower,
+    pollIntervalFor,
     _legacy_send_ip_command,
     _persistentConnectionsEnabled: persistentConnectionsEnabled,
 };

@@ -2,9 +2,15 @@
 // (kind 'shade'). Same chrome as a dim DeviceRow, but the fill/level tracks
 // position (0 = open, 100 = closed) instead of brightness, and commits are
 // always 'release' mode (Insteon/Somfy can't absorb a live stream).
+//
+// Tap toggles ALL three shades together (see commands.toggleShade); the '>'
+// chevron (same pattern as DeviceRow's color-swatch toggle) opens
+// ShadeDrillIn below the row for per-shade control.
 
+import { useState } from 'preact/hooks';
 import { commands } from '../state/index.js';
 import { useDragGesture } from './useDragGesture.js';
+import ShadeDrillIn from './ShadeDrillIn.jsx';
 
 const ROW_HEIGHT = 46;
 const FONT = "'Outfit', system-ui, sans-serif";
@@ -21,6 +27,7 @@ function positionLabel(position) {
 
 function ShadeRow({ entry }) {
   const view = commands.deviceView(entry);
+  const [drillInOpen, setDrillInOpen] = useState(false);
 
   const gesture = useDragGesture({
     startValue: view.position,
@@ -33,7 +40,7 @@ function ShadeRow({ entry }) {
   const dotColor = view.on ? AMBER : OFF_DOT;
   const dimmedOut = view.reachable === false || view.stale;
 
-  return (
+  const row = (
     <div
       onPointerDown={gesture.onPointerDown}
       onPointerMove={gesture.onPointerMove}
@@ -41,6 +48,8 @@ function ShadeRow({ entry }) {
       onPointerCancel={gesture.onPointerCancel}
       style={{
         position: 'relative',
+        flex: 1,
+        minWidth: 0,
         height: ROW_HEIGHT,
         borderRadius: 'var(--r-row, 11px)',
         border: view.unconfirmed ? '1px solid rgba(242, 166, 94, 0.55)' : ROW_BORDER,
@@ -120,6 +129,43 @@ function ShadeRow({ entry }) {
           {positionLabel(view.position)}
         </span>
       </div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+        {row}
+        <button
+          type="button"
+          aria-expanded={drillInOpen}
+          aria-label={drillInOpen ? 'Hide shade controls' : 'Show shade controls'}
+          onClick={(event) => {
+            event.stopPropagation();
+            setDrillInOpen((open) => !open);
+          }}
+          style={{
+            width: 32,
+            height: ROW_HEIGHT,
+            flexShrink: 0,
+            borderRadius: 'var(--r-row, 11px)',
+            border: ROW_BORDER,
+            background: ROW_BG,
+            color: 'var(--text-secondary, rgba(234, 229, 239, 0.55))',
+            fontFamily: FONT,
+            fontWeight: 500,
+            fontSize: 14,
+            cursor: 'pointer',
+            transform: drillInOpen ? 'rotate(90deg)' : 'none',
+            transition: 'transform 150ms var(--ease-turn, ease)',
+          }}
+        >
+          &rsaquo;
+        </button>
+      </div>
+      {drillInOpen && (
+        <ShadeDrillIn entry={entry} onBack={() => setDrillInOpen(false)} />
+      )}
     </div>
   );
 }

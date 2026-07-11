@@ -155,7 +155,10 @@ function AvCluster({ receiverEntry, projectorEntry, inputScenes }) {
 
   const live = (receiverEntry && receiverEntry.live) || {};
   const receiverOn = live.power === 'ON';
-  const activeSceneId = INPUT_NUMBER_TO_SCENE_ID[live.input];
+  // Only highlight a source while the receiver is actually on -- with the
+  // receiver off, `live.input` is just the last-known value and shouldn't
+  // render as "active" (it isn't driving anything right now).
+  const activeSceneId = receiverOn ? INPUT_NUMBER_TO_SCENE_ID[live.input] : null;
   const activeLabel = INPUT_NUMBER_TO_LABEL[live.input] || 'Unknown source';
 
   return (

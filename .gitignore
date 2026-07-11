@@ -40,3 +40,8 @@ _OLD/*
 
 # Claude Code session log — private by default (verbatim prompts)
 /session-log/
+
+# Runtime-written dashboard user prefs (e.g. custom swatch palette) —
+# not hand-edited config, lives on the Pi across deploys (see
+# private/update-pi.sh's EXCLUDE_PATTERNS)
+/data/

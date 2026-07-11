@@ -19,6 +19,7 @@
  *                 class DeviceConnection {
  *                   send(cmd, {expectResponse, timeoutMs}) -> Promise<string|null>
  *                   onStatusChange(cb)   // cb('online' | 'offline')
+ *                   setUnsolicitedHandler(fn, terminator)   // fn(token) for device-pushed data
  *                 }
  *
  *               DeviceConnection NEVER publishes to MQTT itself -- callers
@@ -52,6 +53,23 @@
  *               (default `'\r'`) rather than a hardcoded `\r` -- some devices
  *               (e.g. an Anthem receiver's `Z1POW1;`-style replies) terminate
  *               with `;` and no `\r` at all. Multi-char terminators work too.
+ *
+ *               Unsolicited data (issue: Anthem volume-knob pushes): a device
+ *               can write to the socket on its own, outside any command/
+ *               response round trip (e.g. the physical Anthem volume knob).
+ *               `_onData()` normally forwards every byte to whichever
+ *               `_activeDataHandler` is currently awaiting a command's
+ *               response -- that's the ONLY consumer while a command is
+ *               in-flight, and that matching is untouched by this. But when
+ *               nothing is awaiting a response, those bytes used to just be
+ *               dropped. `setUnsolicitedHandler(fn, terminator)` registers a
+ *               persistent per-connection callback: incoming bytes are
+ *               buffered and framed on `terminator` (falls back to the
+ *               connection's own response `terminator` if omitted), and every
+ *               framed token that arrives while NO command is in-flight is
+ *               handed to `fn(token)`. The buffer is bounded (cleared past
+ *               ~4KB without a terminator) so a malformed/chatty peer can't
+ *               grow it unbounded.
  */
 
 const net = require('net');
@@ -67,6 +85,7 @@ const DEFAULT_KEEPALIVE_MS = 30000;       // TCP-level keepalive probe interval 
 const MAX_PUMP_WAIT_MS = 250;             // poll-loop fallback cap while offline (bounded; real wakeups are event-driven)
 const DEFAULT_TERMINATOR = '\r';          // response-framing terminator (overridable per-connection; see `terminator` opt)
 const BENIGN_CLOSE_LOG_INTERVAL_MS = 3600000; // at most once/hour per connection (see _logBenignClose)
+const UNSOLICITED_BUFFER_MAX_BYTES = 4096; // bound on the unsolicited-frame buffer (see _feedUnsolicited)
 
 /**
  * One persistent TCP connection to a single device (host:port). Lazily
@@ -121,6 +140,63 @@ class DeviceConnection {
         this._activeFinish = null;
 
         this.statusListeners = [];
+
+        // Persistent unsolicited-data hook -- see setUnsolicitedHandler() and
+        // the module doc comment. Only consulted by _onData() when there is
+        // no _activeDataHandler (i.e. no command currently awaiting a
+        // response) so it never interferes with command/response matching.
+        this._unsolicitedHandler = null;
+        this._unsolicitedTerminator = null;
+        this._unsolicitedBuffer = '';
+    }
+
+    /**
+     * Registers a persistent callback for bytes that arrive with no command
+     * currently awaiting a response (see the module doc comment). Replaces
+     * any previously-registered unsolicited handler and resets the framing
+     * buffer. Pass a falsy `fn` to unregister.
+     * @param {function(string): void} fn - called with each framed token
+     * @param {string} [terminator] - defaults to this connection's own
+     *   response-framing terminator (this.terminator)
+     */
+    setUnsolicitedHandler(fn, terminator) {
+        this._unsolicitedHandler = typeof fn === 'function' ? fn : null;
+        this._unsolicitedTerminator = terminator || this.terminator;
+        this._unsolicitedBuffer = '';
+    }
+
+    /**
+     * Buffers and frames bytes for the unsolicited handler, on the same
+     * terminator-framing convention _sendOne() uses for command responses.
+     * Every complete token found is handed to the registered handler; a
+     * trailing partial token (no terminator yet) stays buffered for the next
+     * chunk. Bounded: a buffer that grows past UNSOLICITED_BUFFER_MAX_BYTES
+     * without ever finding a terminator is cleared (logged) rather than
+     * growing unbounded against a malformed/chatty peer.
+     * @param {Buffer} data
+     */
+    _feedUnsolicited(data) {
+        this._unsolicitedBuffer += data.toString();
+        const terminator = this._unsolicitedTerminator || this.terminator;
+        let idx;
+        while ((idx = this._unsolicitedBuffer.indexOf(terminator)) !== -1) {
+            const token = this._unsolicitedBuffer.slice(0, idx);
+            this._unsolicitedBuffer = this._unsolicitedBuffer.slice(idx + terminator.length);
+            if (token && this._unsolicitedHandler) {
+                try {
+                    this._unsolicitedHandler(token);
+                } catch (err) {
+                    console.log('DeviceConnection %s: unsolicited handler threw: %s', this.name, err.message);
+                }
+            }
+        }
+        if (this._unsolicitedBuffer.length > UNSOLICITED_BUFFER_MAX_BYTES) {
+            console.log(
+                'DeviceConnection %s: unsolicited buffer exceeded %d bytes without a terminator -- clearing',
+                this.name, UNSOLICITED_BUFFER_MAX_BYTES
+            );
+            this._unsolicitedBuffer = '';
+        }
     }
 
     /**
@@ -302,7 +378,14 @@ class DeviceConnection {
 
     _onData(data) {
         if (this._activeDataHandler) {
+            // A command is in-flight -- data goes ONLY to its handler, exactly
+            // as before setUnsolicitedHandler() existed. Command/response
+            // matching must never be disturbed by the unsolicited path.
             this._activeDataHandler(data);
+            return;
+        }
+        if (this._unsolicitedHandler) {
+            this._feedUnsolicited(data);
         }
     }
 
@@ -509,6 +592,7 @@ class DeviceConnection {
         }
         this.status = 'offline';
         this._connected = false;
+        this._unsolicitedBuffer = '';
         this._wake();
     }
 }

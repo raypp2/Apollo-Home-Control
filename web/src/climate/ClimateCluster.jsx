@@ -81,6 +81,9 @@ function ClimateCluster({ acEntry }) {
           gap: 12,
         }}
       >
+        {/* Label is the ACTION this tap performs, not the current state --
+            "On" while off (tap to turn on), "Off" while running (tap to turn
+            off). Highlight/border still track the actual `on` state. */}
         <button
           type="button"
           onClick={() => commands.climatePower(acEntry, !on)}
@@ -99,7 +102,7 @@ function ClimateCluster({ acEntry }) {
             flexShrink: 0,
           }}
         >
-          {on ? 'On' : 'Off'}
+          {on ? 'Off' : 'On'}
         </button>
 
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>

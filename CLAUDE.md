@@ -69,6 +69,10 @@ Only use `--install` (npm ci) when the root `package-lock.json` has changed (the
 - **Modules import shared state from `index.js`** — pattern `const { devices, lights, ... } = require('../index')`. Module loading order matters; `index.js` exports state before `require`-ing handlers.
 - **Command paths** — both the local `/api` route and the SQS payload format use the same `/MODULE/DEVICE/COMMAND/PARAM1/PARAM2` shape. Adding a module means a new `case` in `handler.js`.
 - **Logging convention** — every command gets a numeric `operation_num` (incrementing) prefixed to log lines (`%d - ...`). Easy to grep a single command's lifecycle in `apollo.log`.
+- **State wire convention** — every device state topic publishes `power` as the string `'ON'|'OFF'` (never a boolean); the dashboard checks `live.power === 'ON'`. `mqttTopics.publishState()` merges per-topic against its own cache, so partial publishes are safe.
+- **Combined fixtures** — a `lights.json` insteon entry with `hueGroup: "<n>"` + `isColor: true` routes ON/OFF to the Insteon switch but COLOR/brightness to that Hue group (`lighting.js`), with Hue-side state fused back onto the insteon topic (never `power`). Hall and officeDesk use this.
+- **User prefs** — `data/userPrefs.json` (custom swatch palette; `GET /api/prefs`, `POST /api/prefs/swatches`). `data/` is gitignored AND excluded from the deploy rsync so Pi-side writes survive deploys.
+- **Dev against the live Pi** — `cd web && npm run dev:pi` proxies `/api`+`/list` AND the MQTT websocket to `pi.local` (plain `npm run dev` expects a local backend; beware a stale local mosquitto on 9001 silently feeding wrong state).
 
 ## Known bugs and feature work
 

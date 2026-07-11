@@ -42,6 +42,17 @@
  *               unreachable at Apollo boot doesn't permanently disable the
  *               listener.
  *
+ *               Combined fixtures (Insteon switch + Hue color bulb behind
+ *               it, e.g. "hall"/"officeDesk" -- see lighting.js's hueGroup
+ *               routing): the same startup fetch also builds a SECOND map,
+ *               {uuid -> [combined-fixture entries]}, keyed off those
+ *               entries' `hueGroup` field rather than a hue-group `address`.
+ *               A grouped_light event for a group some insteon light claims
+ *               via `hueGroup` republishes color/brightness (never `power`
+ *               -- that's owned by the Insteon switch) to that light's own
+ *               canonical topic too. See _buildCombinedFixtureMap() and
+ *               _handleResourceItem()'s combinedEntries handling below.
+ *
  *               Reconnect: on stream error/close, retries with capped
  *               exponential backoff (5s -> 60s). While disconnected, falls
  *               back to polling the legacy v1 `GET /api/<key>/groups` every
@@ -106,11 +117,14 @@ function ensureInit() {
  * @param {function} [deps.publish] - (topic, payload, opts) => void, defaults to mqttClient.publish
  * @param {Map<string,object>} [deps.uuidMap] - pre-seeded uuid->entry map, skips the real fetch
  */
-function _init({ lights: lightsOverride, publish: publishOverride, uuidMap: uuidMapOverride }) {
+function _init({ lights: lightsOverride, publish: publishOverride, uuidMap: uuidMapOverride, combinedFixtureMap: combinedFixtureMapOverride }) {
     lights_new = lightsOverride;
     doPublish = publishOverride || mqttClient.publish;
     if (uuidMapOverride) {
         uuidMap = uuidMapOverride;
+    }
+    if (combinedFixtureMapOverride) {
+        combinedFixtureMap = combinedFixtureMapOverride;
     }
     initialized = true;
 }
@@ -119,6 +133,14 @@ function _init({ lights: lightsOverride, publish: publishOverride, uuidMap: uuid
 
 // uuid (CLIP v2 resource id) -> lights.json entry
 let uuidMap = new Map();
+
+// uuid (CLIP v2 resource id) -> [lights.json entries] for COMBINED fixtures
+// -- an Insteon-switched light with a Hue color bulb behind it (e.g.
+// "hall"/"officeDesk", see lighting.js's hueGroup routing). Keyed by uuid
+// (not group number), same as uuidMap, so _handleResourceItem can look it up
+// directly off the incoming event. A group could in principle back more than
+// one combined fixture, hence the array.
+let combinedFixtureMap = new Map();
 
 // uuid -> { color, color_temperature } -- stashed alongside the derived hex
 // published in state.color (see _xyToHex below); color_temperature itself is
@@ -210,7 +232,13 @@ function _buildUuidMapFromResource(data, lightsList) {
             map.set(item.id, entry);
             matchedAddresses.add(groupNum);
         } else {
-            console.log('Hue SSE: grouped_light group %s (uuid %s) has no matching lights.json entry', groupNum, item.id);
+            // Not a false alarm if some OTHER entry claims this same group as
+            // a combined fixture's `hueGroup` (see _buildCombinedFixtureMap
+            // below) -- that's a valid, if different, kind of match.
+            const hasCombinedFixture = list.some((candidate) => candidate && candidate.hueGroup !== undefined && String(candidate.hueGroup) === groupNum);
+            if (!hasCombinedFixture) {
+                console.log('Hue SSE: grouped_light group %s (uuid %s) has no matching lights.json entry', groupNum, item.id);
+            }
         }
     }
 
@@ -223,18 +251,56 @@ function _buildUuidMapFromResource(data, lightsList) {
     return map;
 }
 
+/**
+ * Pure mapping function: given the same CLIP v2 grouped_light resource data
+ * used by _buildUuidMapFromResource, builds {uuid -> [entries]} for every
+ * lights.json entry that claims a Hue group via `hueGroup` -- a combined
+ * Insteon-switch + Hue-color-bulb fixture (e.g. "hall"/"officeDesk"; see
+ * lighting.js's insteon-branch hueGroup routing and the module doc comment
+ * above combinedFixtureMap). Unlike uuidMap, entries here are NOT required
+ * to be `type === 'hue-group'` -- combined fixtures are `type === 'insteon'`
+ * with an extra `hueGroup` field. No "unmatched" logging here (deliberately)
+ * -- `hueGroup` is optional, so most lights.json entries legitimately have
+ * no match; that's not noteworthy the way an unmatched hue-group entry is.
+ * Exported for direct unit testing -- never touches the network itself.
+ * @param {Array} data
+ * @param {Array} lightsList
+ * @returns {Map<string, object[]>}
+ */
+function _buildCombinedFixtureMap(data, lightsList) {
+    const list = Array.isArray(lightsList) ? lightsList : [];
+    const items = Array.isArray(data) ? data : [];
+    const map = new Map();
+
+    for (const item of items) {
+        const groupNum = v1GroupNumber(item && item.id_v1);
+        if (groupNum === null) {
+            continue;
+        }
+        const matches = list.filter((candidate) => candidate && candidate.hueGroup !== undefined && String(candidate.hueGroup) === groupNum);
+        if (matches.length > 0) {
+            map.set(item.id, matches);
+        }
+    }
+
+    return map;
+}
+
 let uuidMapRetryDelay = INITIAL_BACKOFF_MS;
 
 /**
- * Fetches /clip/v2/resource/grouped_light and builds the uuid map. On
- * failure (bridge briefly unreachable at boot, etc), retries with capped
- * exponential backoff instead of giving up -- see module doc comment. Once
- * the map is built, proceeds to open the SSE stream.
+ * Fetches /clip/v2/resource/grouped_light and builds the uuid map (both the
+ * primary hue-group uuidMap and the combined-fixture map -- see
+ * _buildCombinedFixtureMap). On failure (bridge briefly unreachable at boot,
+ * etc), retries with capped exponential backoff instead of giving up -- see
+ * module doc comment. Once the maps are built, proceeds to open the SSE
+ * stream.
  */
 function initUuidMapWithRetry() {
     httpsGetJson('/clip/v2/resource/grouped_light', { 'hue-application-key': hueKey })
         .then((body) => {
             uuidMap = _buildUuidMapFromResource(body && body.data, lights_new);
+            combinedFixtureMap = _buildCombinedFixtureMap(body && body.data, lights_new);
             uuidMapRetryDelay = INITIAL_BACKOFF_MS;
             connectSSE();
         })
@@ -340,15 +406,26 @@ function _handleBatch(batch) {
 /**
  * Handles one CLIP v2 resource item from an event batch. Only
  * `grouped_light` items resolve to canonical state -- anything else, or a
- * `grouped_light` whose uuid isn't in the map, is ignored silently. Only the
- * fields actually present in the event are published (publishState's own
- * merge preserves anything not present, e.g. a brightness-only event must
- * not fabricate a power value). Also stashes color/color_temperature on the
- * tracked-extras map (kept for future color_temperature support -- full CT
- * publishing is still out of scope here); `item.color`'s xy point, if
- * present, is additionally converted to a '#rrggbb' hex and included in the
- * published state so an external color change (e.g. made from the Hue app)
- * reflects on the dashboard.
+ * `grouped_light` whose uuid resolves to neither a hue-group entry nor a
+ * combined-fixture entry, is ignored silently. Only the fields actually
+ * present in the event are published (publishState's own merge preserves
+ * anything not present, e.g. a brightness-only event must not fabricate a
+ * power value). Also stashes color/color_temperature on the tracked-extras
+ * map (kept for future color_temperature support -- full CT publishing is
+ * still out of scope here); `item.color`'s xy point, if present, is
+ * additionally converted to a '#rrggbb' hex and included in the published
+ * state so an external color change (e.g. made from the Hue app) reflects on
+ * the dashboard.
+ *
+ * Combined fixtures (uuid found in combinedFixtureMap -- an Insteon-switched
+ * light with a Hue color bulb behind it, e.g. "hall"/"officeDesk"): the SAME
+ * derived state is also published to each combined entry's own canonical
+ * topic, MINUS `power` -- power for those fixtures is owned by the Insteon
+ * switch (lighting.js), never by the Hue side, so a bulb-level on/off from
+ * the Hue app must never overwrite the switch's power state. This is safe
+ * as a partial publish because mqttTopics.publishState() merges against its
+ * own per-topic last-known state, so an omitted `power` field here leaves
+ * whatever the Insteon side last published untouched.
  * @param {object} item
  */
 function _handleResourceItem(item) {
@@ -357,7 +434,9 @@ function _handleResourceItem(item) {
     }
 
     const entry = uuidMap.get(item.id);
-    if (!entry) {
+    const combinedEntries = combinedFixtureMap.get(item.id);
+
+    if (!entry && (!combinedEntries || combinedEntries.length === 0)) {
         return; // unknown uuid -- ignore silently
     }
 
@@ -384,7 +463,7 @@ function _handleResourceItem(item) {
         // fall back to the last known brightness on the entry, then to full
         // brightness if neither is known (xy alone doesn't carry luminance).
         const briPercent = typeof state.brightness === 'number' ? state.brightness
-            : typeof entry.status === 'number' ? entry.status
+            : entry && typeof entry.status === 'number' ? entry.status
                 : 100;
         const hex = _xyToHex(item.color.xy.x, item.color.xy.y, briPercent / 100);
         if (hex) {
@@ -396,13 +475,26 @@ function _handleResourceItem(item) {
         return;
     }
 
-    mqttTopics.publishState(entry, state, 'event');
+    if (entry) {
+        mqttTopics.publishState(entry, state, 'event');
 
-    if ('power' in state) {
-        entry.checked = (state.power === 'ON');
+        if ('power' in state) {
+            entry.checked = (state.power === 'ON');
+        }
+        if ('brightness' in state) {
+            entry.status = state.brightness;
+        }
     }
-    if ('brightness' in state) {
-        entry.status = state.brightness;
+
+    if (combinedEntries && combinedEntries.length > 0) {
+        const combinedState = { ...state };
+        delete combinedState.power; // CRITICAL: power is owned by the Insteon switch, never the Hue side.
+
+        if (Object.keys(combinedState).length > 0) {
+            for (const combinedEntry of combinedEntries) {
+                mqttTopics.publishState(combinedEntry, combinedState, 'event');
+            }
+        }
     }
 }
 
@@ -699,6 +791,7 @@ function startListener() {
  */
 function _resetForTesting() {
     uuidMap = new Map();
+    combinedFixtureMap = new Map();
     trackedExtras.clear();
     sseBuffer = '';
     uuidMapRetryDelay = INITIAL_BACKOFF_MS;
@@ -719,6 +812,7 @@ module.exports = {
     _handleBatch,
     _handleResourceItem,
     _buildUuidMapFromResource,
+    _buildCombinedFixtureMap,
     _mapV1GroupState,
     _xyToHex,
     _resetForTesting,

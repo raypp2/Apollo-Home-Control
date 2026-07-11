@@ -177,20 +177,22 @@ test('setMode ignores an unknown mode', () => {
 
 // --- setPower ---
 
-test('setPower(true) fires "on" and publishes power:true', () => {
+// Published power is the 'ON'/'OFF' wire convention shared with every other
+// device state topic; the shadow's internal boolean never leaves the module.
+test('setPower(true) fires "on" and publishes power:"ON"', () => {
     climateShadow.setPower(true);
 
     assert.strictEqual(sent.length, 1);
     assert.strictEqual(sent[0].irString, AC_ENTRY.commands.on);
-    assert.strictEqual(lastPublish().state.power, true);
+    assert.strictEqual(lastPublish().state.power, 'ON');
 });
 
-test('setPower(false) fires "off" and publishes power:false', () => {
+test('setPower(false) fires "off" and publishes power:"OFF"', () => {
     climateShadow.setPower(false);
 
     assert.strictEqual(sent.length, 1);
     assert.strictEqual(sent[0].irString, AC_ENTRY.commands.off);
-    assert.strictEqual(lastPublish().state.power, false);
+    assert.strictEqual(lastPublish().state.power, 'OFF');
 });
 
 // --- setFan: ladder + auto transitions ---
@@ -263,8 +265,10 @@ test('override updates every given field, publishes, and sends no IR', () => {
     const result = climateShadow.override({ power: true, mode: 'ECO', setpoint: 68, fan: 'low' });
 
     assert.strictEqual(sent.length, 0);
+    // getState()/override() return the internal boolean; the publish carries
+    // the 'ON'/'OFF' wire form.
     assert.deepStrictEqual(result, { power: true, mode: 'ECO', setpoint: 68, fan: 'low' });
-    assert.deepStrictEqual(lastPublish().state, { power: true, mode: 'ECO', setpoint: 68, fan: 'low' });
+    assert.deepStrictEqual(lastPublish().state, { power: 'ON', mode: 'ECO', setpoint: 68, fan: 'low' });
 });
 
 test('override only touches the fields given, leaving the rest of the shadow alone', () => {
@@ -313,7 +317,7 @@ test('start() with no retained state seeds defaults and publishes them', () => {
     climateShadow.start();
 
     assert.deepStrictEqual(climateShadow.getState(), { power: false, mode: 'COOL', setpoint: 72, fan: 'auto' });
-    assert.deepStrictEqual(lastPublish().state, { power: false, mode: 'COOL', setpoint: 72, fan: 'auto' });
+    assert.deepStrictEqual(lastPublish().state, { power: 'OFF', mode: 'COOL', setpoint: 72, fan: 'auto' });
     assert.strictEqual(sent.length, 0);
 });
 

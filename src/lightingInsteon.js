@@ -57,6 +57,13 @@ insteon_scene_command('living-room','on');
 
 */
 
+// Post-scene verification sweep (live-verified bug: a light stayed on after
+// an "all off" scene broadcast even though most devices pick up the hub's
+// own cleanup events within ~4s -- some devices simply don't respond, and
+// the round-robin poll alone can take up to a minute to notice). Delayed so
+// the scene broadcast's own traffic/cleanup events settle first.
+const SCENE_SWEEP_DELAY_MS = 3000;
+
 function insteon_scene_command (operation_num, scene, insteon_command) {
 
     /*
@@ -67,6 +74,10 @@ function insteon_scene_command (operation_num, scene, insteon_command) {
     =I=0      END FOR ALL COMMANDS
 
     */
+
+    // Captured before the switch below overwrites insteon_command with its
+    // encoded hex form -- only needed for the sweep's log line.
+    const commandLabel = insteon_command;
 
     switch(insteon_command) {
 
@@ -91,6 +102,39 @@ function insteon_scene_command (operation_num, scene, insteon_command) {
     noteCommandSent();
 
     insteon_send_command(operation_num, hub_command);
+
+    scheduleSceneSweep(operation_num, scene, commandLabel);
+}
+
+/**
+ * Schedules sweepAll() (lightingInsteonListener.js) SCENE_SWEEP_DELAY_MS
+ * after a scene broadcast, to promptly catch any member device that didn't
+ * pick up the broadcast (see SCENE_SWEEP_DELAY_MS's doc comment above).
+ * Skipped entirely in DRY_RUN -- there's no real hub connection for
+ * sweepAll() to poll (the listener's startListener()/hub.httpClient() is
+ * never called under DRY_RUN, see index.js), so it would just spin against
+ * an unconfigured `Insteon()` instance for no benefit. Lazy require +
+ * defensive try/catch mirror noteCommandSent()'s existing pattern above.
+ * @param {number} operation_num
+ * @param {string} scene
+ * @param {string} commandLabel - "ON"/"OFF", for the sweep's log line
+ */
+function scheduleSceneSweep(operation_num, scene, commandLabel) {
+    if (DRY_RUN) {
+        return;
+    }
+
+    const timer = setTimeout(function () {
+        try {
+            require('./lightingInsteonListener').sweepAll('scene:' + scene + ':' + commandLabel);
+        } catch (err) {
+            console.log("%d - Insteon post-scene sweep error: %s", operation_num, err.message);
+        }
+    }, SCENE_SWEEP_DELAY_MS);
+
+    if (typeof timer.unref === 'function') {
+        timer.unref();
+    }
 }
 
 

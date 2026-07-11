@@ -127,9 +127,11 @@ function RoomPanel() {
           {label}
         </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <RoomToggle roomId={selectedRoom} roomLabel={label} />
-        </div>
+        {commands.roomLights(selectedRoom).length > 1 && (
+          <div style={{ marginBottom: 16 }}>
+            <RoomToggle roomId={selectedRoom} roomLabel={label} />
+          </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           {entries.map((entry) => {
@@ -171,7 +173,12 @@ function RoomPanel() {
               inputScenes={inputScenes}
             />
           )}
-          {spotifyEntry && <NowPlaying spotifyEntry={spotifyEntry} />}
+          {spotifyEntry && (
+            <NowPlaying
+              spotifyEntry={spotifyEntry}
+              receiverOn={receiverEntry ? receiverEntry.live && receiverEntry.live.power === 'ON' : true}
+            />
+          )}
         </div>
       )}
 

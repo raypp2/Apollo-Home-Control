@@ -427,12 +427,54 @@ function _resetPollStateForTesting() {
 }
 
 /**
+ * Polls a single insteon light's level via the hub and publishes poll-sourced
+ * canonical state, syncing the in-memory entry -- the single-device poll
+ * "machinery" shared by pollTick() (one device per round-robin tick) and
+ * sweepAll() (every device back-to-back, see below). Never throws and never
+ * rejects -- any failure is routed through handlePollError() (logged once
+ * per outage, engages the hub-error backoff) and the returned promise still
+ * resolves, since callers use it purely as a "this attempt is done" signal,
+ * not a success signal.
+ * @param {object} entry
+ * @returns {Promise<void>}
+ */
+function pollDeviceOnce(entry) {
+    return new Promise(function (resolve) {
+        let result;
+        try {
+            result = hub.light(entry.address).level();
+        } catch (err) {
+            handlePollError(err);
+            resolve();
+            return;
+        }
+
+        Promise.resolve(result).then(function (lvl) {
+            loggedPollError = false;
+
+            const level = (typeof lvl === 'number') ? lvl : 0;
+            const power = level > 0 ? 'ON' : 'OFF';
+
+            mqttTopics.publishState(entry, { power, brightness: level }, 'poll');
+            entry.checked = (power === 'ON');
+            entry.status = level;
+            resolve();
+        }).catch(function (err) {
+            handlePollError(err);
+            resolve();
+        });
+    });
+}
+
+/**
  * One round-robin polling tick: polls a single insteon light's level via the
  * hub, publishes poll-sourced canonical state, and syncs the in-memory entry.
  * Skips (without advancing the rotation) if:
  *  - polling is currently paused due to a recent outbound command, or a prior
  *    hub-error backoff window, or
- *  - the previous poll call hasn't settled yet (never stack concurrent polls).
+ *  - the previous poll call (or an in-progress sweepAll(), which shares the
+ *    same pollInFlight flag -- see its doc comment) hasn't settled yet, so
+ *    concurrent hub calls are never stacked.
  */
 function pollTick() {
     ensureInit();
@@ -451,7 +493,7 @@ function pollTick() {
     }
 
     if (pollInFlight) {
-        return; // previous poll hasn't settled -- never stack concurrent hub calls
+        return; // previous poll (or an in-progress sweep) hasn't settled -- never stack concurrent hub calls
     }
 
     if (pollRotationIndex >= targets.length) {
@@ -461,30 +503,76 @@ function pollTick() {
     pollRotationIndex = (pollRotationIndex + 1) % targets.length;
 
     pollInFlight = true;
-
-    let result;
-    try {
-        result = hub.light(entry.address).level();
-    } catch (err) {
+    pollDeviceOnce(entry).then(function () {
         pollInFlight = false;
-        handlePollError(err);
+    });
+}
+
+// Spacing between devices during a sweepAll() pass -- short enough that a
+// full sweep of a dozen lights finishes in a few seconds, long enough that
+// the hub's small command buffer isn't hit with a burst (same rationale as
+// the round-robin poll's staggering, just compressed into one pass).
+const SWEEP_STAGGER_MS = 300;
+
+/**
+ * Promptly polls every configured Insteon light back-to-back (reusing
+ * pollDeviceOnce() -- the same single-device poll machinery pollTick() uses
+ * -- staggered SWEEP_STAGGER_MS apart so the hub's small command buffer
+ * isn't hit with a burst), instead of waiting for the round-robin sweep to
+ * wander past every device (up to ~a minute for a dozen lights).
+ *
+ * Intended to be called ~3s after an Insteon group/scene broadcast (see
+ * lightingInsteon.js's insteon_scene_command(), which deliberately publishes
+ * no per-device state -- a scene fans out to an unknown set of member
+ * devices). Most devices surface via the hub's own cleanup events within
+ * ~4s, but misses happen (live test: a light stayed on after an "all off"
+ * scene) and this catches those promptly instead of leaving them stale for
+ * up to a minute.
+ *
+ * Shares the pollInFlight flag with pollTick() so the two never contend for
+ * the hub concurrently: while a sweep is running, pollTick() ticks are
+ * skipped (same as if an ordinary poll were in flight); a sweep in turn
+ * won't start on top of an in-flight ordinary poll or an earlier sweep.
+ * Resets the round-robin rotation to 0 once the sweep completes, so
+ * pollTick() starts a fresh pass rather than immediately re-polling whatever
+ * device happened to be next before the sweep ran.
+ * @param {string} [reason] - logged only, e.g. "scene:allLights:OFF"
+ */
+function sweepAll(reason) {
+    ensureInit();
+
+    if (Date.now() < pollPausedUntil) {
+        return; // hub-outage backoff still in effect
+    }
+
+    if (pollInFlight) {
+        return; // an ordinary poll tick (or an earlier sweep) is already using the hub
+    }
+
+    const targets = insteonLights();
+    if (targets.length === 0) {
         return;
     }
 
-    Promise.resolve(result).then(function (lvl) {
-        pollInFlight = false;
-        loggedPollError = false;
+    console.log('Insteon sweep starting (%s): %d device(s)', reason || 'unspecified', targets.length);
+    pollInFlight = true;
 
-        const level = (typeof lvl === 'number') ? lvl : 0;
-        const power = level > 0 ? 'ON' : 'OFF';
-
-        mqttTopics.publishState(entry, { power, brightness: level }, 'poll');
-        entry.checked = (power === 'ON');
-        entry.status = level;
-    }).catch(function (err) {
-        pollInFlight = false;
-        handlePollError(err);
-    });
+    let i = 0;
+    function next() {
+        if (i >= targets.length) {
+            pollInFlight = false;
+            pollRotationIndex = 0; // start the round-robin fresh after a full sweep
+            return;
+        }
+        const entry = targets[i++];
+        pollDeviceOnce(entry).then(function () {
+            const timer = setTimeout(next, SWEEP_STAGGER_MS);
+            if (typeof timer.unref === 'function') {
+                timer.unref();
+            }
+        });
+    }
+    next();
 }
 
 /**
@@ -575,6 +663,7 @@ module.exports = {
     _handleHubCommand,
     isKeypadPress,
     pollTick,
+    sweepAll,
     startInsteonPolling,
     _init,
     _setHub,

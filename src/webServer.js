@@ -23,6 +23,7 @@ const mqttTopics = require('./mqttTopics');
 
 var express = require('express');
 var path = require('path');
+var fs = require('fs');
 var app = express();
 // The new Preact dashboard (built into public/app, base '/') is served at the
 // root. Registered BEFORE the old public/ static so '/' resolves to the new
@@ -42,6 +43,50 @@ function withStateTopic(entries, topicFn) {
     });
 }
 
+// Merges live `active`/`activatedAt` scene/macro shadow state (src/sceneShadow.js)
+// into a shallow copy of each entry, WITHOUT mutating the shared config arrays
+// (same rationale as withStateTopic() above). `stateGetter` is sceneShadow's
+// sceneState()/macroState() -- undefined (never activated this run) defaults
+// to active:false/activatedAt:null rather than being surfaced as an error, so
+// a dashboard on the MQTT-WS-unreachable polling fallback can still see
+// externally-activated scenes/macros instead of never learning about them.
+function withActiveState(entries, stateGetter) {
+    return entries.map(function(entry) {
+        const state = stateGetter(entry.id) || {};
+        return {
+            ...entry,
+            active: state.active === undefined ? false : state.active,
+            activatedAt: state.activatedAt === undefined ? null : state.activatedAt,
+        };
+    });
+}
+
+// Storage for dashboard user preferences (currently: the 6-slot custom
+// swatch palette). A plain JSON file rather than a config/*.json entry --
+// this is runtime-written state, not hand-edited config, and living outside
+// config/ means it isn't swept up by that directory's gitignore/symlink
+// conventions. IMPORTANT: also excluded from the Pi rsync deploy (see
+// private/update-pi.sh's EXCLUDE_PATTERNS) so a deploy's `rsync --delete`
+// never wipes Pi-side writes.
+var USER_PREFS_PATH = path.join(__dirname, '..', 'data', 'userPrefs.json');
+var SWATCH_HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+// Reads data/userPrefs.json, defaulting to {} if the file doesn't exist yet
+// (first run) or is somehow unparseable -- never throws.
+function readUserPrefs() {
+    try {
+        return JSON.parse(fs.readFileSync(USER_PREFS_PATH, 'utf8'));
+    } catch (err) {
+        return {};
+    }
+}
+
+// Writes data/userPrefs.json, creating the data/ directory on demand.
+function writeUserPrefs(prefs) {
+    fs.mkdirSync(path.dirname(USER_PREFS_PATH), { recursive: true });
+    fs.writeFileSync(USER_PREFS_PATH, JSON.stringify(prefs, null, 2));
+}
+
 
 // IMPORTANT: this must be registered BEFORE the '/api' catch-all middleware
 // below, otherwise that middleware's app.use('/api', ...) swallows this route
@@ -55,6 +100,36 @@ function withStateTopic(entries, topicFn) {
 app.get('/api/health', function(request, response) {
     const healthMonitor = require('./healthMonitor');
     response.json(healthMonitor.getHealth());
+});
+
+// Dashboard user-prefs endpoints (currently: the 6-slot custom swatch
+// palette -- see data/userPrefs.json helpers above). Registered BEFORE the
+// '/api' catch-all below for the same reason as /api/health above: Express
+// matches routes in registration order, and app.use('/api', ...) would
+// otherwise swallow these as if "prefs" were a device command.
+//
+// express.json() is mounted ONLY on the POST route below (as that route's
+// own middleware argument), not globally -- the generic '/api' passthrough
+// reads command paths, never a body, so it must not be affected.
+app.get('/api/prefs', function(request, response) {
+    response.json(readUserPrefs());
+});
+
+app.post('/api/prefs/swatches', express.json(), function(request, response) {
+    const swatches = request.body && request.body.swatches;
+    const isValid = Array.isArray(swatches)
+        && swatches.length === 6
+        && swatches.every(function(s) { return typeof s === 'string' && SWATCH_HEX_RE.test(s); });
+
+    if (!isValid) {
+        response.status(400).send("ERROR: swatches must be an array of exactly 6 hex color strings (e.g. \"#AABBCC\").");
+        return;
+    }
+
+    const prefs = readUserPrefs();
+    prefs.swatches = swatches;
+    writeUserPrefs(prefs);
+    response.json(prefs);
 });
 
 app.use('/api', function(request, response, next) {
@@ -85,14 +160,20 @@ app.use('/list', function(request, response) {
             // console.log("Lights list requested");
             response.json(withStateTopic(lights, function(e) { return mqttTopics.topicFor(e, 'state'); }));
             break;
-        case "/lightingScenes":
+        case "/lightingScenes": {
             // console.log("Lighting Scenes list requested");
-            response.json(withStateTopic(lightingScenes, function(e) { return 'apollo/home/scene/' + e.id + '/state'; }));
+            const sceneShadow = require('./sceneShadow');
+            const scenesWithTopics = withStateTopic(lightingScenes, function(e) { return 'apollo/home/scene/' + e.id + '/state'; });
+            response.json(withActiveState(scenesWithTopics, sceneShadow.sceneState));
             break;
-        case "/macros":
+        }
+        case "/macros": {
             // console.log("Macros list requested");
-            response.json(withStateTopic(macros, function(e) { return 'apollo/home/macro/' + e.id + '/state'; }));
+            const sceneShadow = require('./sceneShadow');
+            const macrosWithTopics = withStateTopic(macros, function(e) { return 'apollo/home/macro/' + e.id + '/state'; });
+            response.json(withActiveState(macrosWithTopics, sceneShadow.macroState));
             break;
+        }
         case "/rooms":
             // console.log("Rooms list requested");
             response.json(rooms);

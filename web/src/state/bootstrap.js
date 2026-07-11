@@ -58,7 +58,9 @@ function joinDeviceLists(lights, devicesList, deviceDetail) {
  * One HTTP poll cycle: re-fetch lights/devices/health and reconcile into the
  * existing store, preserving any outstanding optimistic `pending` state
  * (a poll snapshot must not clobber an in-flight optimistic command any more
- * violently than a stale MQTT message would).
+ * violently than a stale MQTT message would). Also re-fetches
+ * lightingScenes/macros so a client with no live MQTT connection still
+ * converges on backend truth for externally-activated (e.g. Alexa) scenes.
  */
 async function pollOnce() {
   const [lights, devicesList, health] = await Promise.all([
@@ -66,6 +68,19 @@ async function pollOnce() {
     getList('devices'),
     getHealth(),
   ]);
+
+  // Scene/macro refresh is best-effort and separate from the device poll
+  // above -- a failure here must not stop device state from updating.
+  try {
+    const [lightingScenes, macros] = await Promise.all([
+      getList('lightingScenes'),
+      getList('macros'),
+    ]);
+    store.setScenes(store.scenes, lightingScenes);
+    store.setScenes(store.macros, macros);
+  } catch (err) {
+    console.warn('[apollo] poll cycle: scene/macro refresh failed:', err.message);
+  }
 
   const detailByTopic = new Map((health.deviceDetail || []).map((d) => [d.topic, d]));
   const map = new Map(store.devices.value);
@@ -147,6 +162,15 @@ export async function bootstrap() {
   store.setScenes(store.macros, macros);
   store.bridges.value = { ...health.bridges };
   store.degraded.value = Boolean(health.degraded);
+
+  // Best-effort: not every deploy has this endpoint yet, and nothing consumes
+  // `prefs` yet either -- just hydrate quietly, no user-visible failure.
+  try {
+    const prefsResponse = await fetch('/api/prefs');
+    store.prefs.value = prefsResponse.ok ? (await prefsResponse.json()) || {} : {};
+  } catch {
+    store.prefs.value = {};
+  }
 
   connectMqtt();
 

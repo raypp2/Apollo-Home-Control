@@ -379,7 +379,12 @@ function handleMacro(debugId, apiDevice, apiCommand, response) {
         return;
     }
 
-    // Run each command in the macro
+    // Resolve each macro entry to the concrete request path it should
+    // dispatch for this on/off invocation, up front -- dispatch itself
+    // happens below, spaced out over time, so the on/off resolution (which
+    // depends only on apiCommand, not on timing) is done in one synchronous
+    // pass here.
+    const requestPaths = [];
     for (var i=0; i < macro_commands.length; i++) {
             var curCommand = macro_commands[i];
 
@@ -397,7 +402,7 @@ function handleMacro(debugId, apiDevice, apiCommand, response) {
             if (curCommand && typeof curCommand === 'object') {
                 var objectFormPath = (apiCommand === 'OFF') ? curCommand.off : curCommand.on;
                 if (objectFormPath) {
-                    handleRequest("/"+objectFormPath);
+                    requestPaths.push("/"+objectFormPath);
                 } else {
                     console.log("%d - Macro command has no '%s' path, skipping", debugId, apiCommand === 'OFF' ? 'off' : 'on');
                 }
@@ -406,20 +411,70 @@ function handleMacro(debugId, apiDevice, apiCommand, response) {
 
             // console.log("%d - Running Command: %s", debugId, curCommand);
             if(passOnOff){
-                handleRequest("/"+curCommand+"/"+apiCommand);
+                requestPaths.push("/"+curCommand+"/"+apiCommand);
             } else {
-                handleRequest("/"+curCommand);
+                requestPaths.push("/"+curCommand);
             }
     }
 
+    // Dispatch sequentially, spaced MACRO_COMMAND_SPACING_MS apart, instead
+    // of firing every command in the same parallel burst (live-verified bug:
+    // studioMacro's ~7-command burst overflowed the Insteon hub's small
+    // command buffer and silently dropped one -- kitchen/on never executed,
+    // though it works fine issued alone). Fire-and-forget: must never block
+    // the HTTP response below, so this is kicked off without awaiting it.
+    // Each dispatched command still goes through handleRequest(), so it gets
+    // its own operation_num and the usual per-command log lines.
+    dispatchMacroCommandsSequentially(requestPaths);
+
     // Record the macro's on/off activation for the dashboard's scene/macro
-    // shadow state (retained apollo/home/macro/<id>/state). Lazy require to
-    // avoid load-order coupling; safe no-op in dry-run / broker-down.
+    // shadow state (retained apollo/home/macro/<id>/state). Recorded
+    // immediately (not deferred to match the spaced-out dispatch above) so
+    // the dashboard reflects the macro's new on/off state right away, same
+    // as before this change. Lazy require to avoid load-order coupling; safe
+    // no-op in dry-run / broker-down.
     try { require('./sceneShadow').onMacroActivated(macroId, apiCommand); }
     catch (e) { console.log("%d - sceneShadow macro record skipped: %s", debugId, e && e.message); }
 
     // Respond with something to kill connection
     if (typeof response != 'undefined') { response.end("Completed processing request."); }
+}
+
+// Spacing between successive commands in a macro's dispatch sequence. Small
+// enough that a macro still feels instantaneous to the user, large enough
+// that the Insteon hub's small command buffer has time to drain between
+// sends instead of dropping one under a rapid-fire burst.
+const MACRO_COMMAND_SPACING_MS = 400;
+
+/**
+ * Fires a macro's resolved request paths one at a time via handleRequest(),
+ * MACRO_COMMAND_SPACING_MS apart, instead of a parallel burst. The first
+ * command fires immediately (synchronously, within this call) so a
+ * single-command macro is unaffected; subsequent commands are chained via
+ * setTimeout. Never throws outward -- handleRequest() already handles its
+ * own errors per command -- and never returns a value; callers treat this as
+ * fire-and-forget.
+ * @param {string[]} requestPaths - already-resolved "/module/device/command" paths
+ */
+function dispatchMacroCommandsSequentially(requestPaths) {
+    let index = 0;
+
+    function runNext() {
+        if (index >= requestPaths.length) {
+            return;
+        }
+        const path = requestPaths[index++];
+        handleRequest(path);
+
+        if (index < requestPaths.length) {
+            const timer = setTimeout(runNext, MACRO_COMMAND_SPACING_MS);
+            if (typeof timer.unref === 'function') {
+                timer.unref();
+            }
+        }
+    }
+
+    runNext();
 }
 
 

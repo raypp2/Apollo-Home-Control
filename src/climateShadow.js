@@ -65,7 +65,16 @@ let doPublishState;
 let doLastState = () => null; // no-op default; real wiring set in ensureInit()
 let acEntry = null;
 let STEP_SPACING_MS = 600;
+// How long start() waits for the broker's retained replay to land in
+// mqttTopics' cache before seeding + republishing (see start()'s TIMING
+// note). Tests set 0 via _init for synchronous behavior.
+let START_SETTLE_MS = 3000;
 let initialized = false;
+
+// True once any publish() has run this process (commands, overrides, or the
+// deferred startup seed itself) -- gates the deferred seed so it never
+// clobbers state a real command established first.
+let touchedSinceStart = false;
 
 // Current shadow. Seeded to DEFAULT_STATE until start() (or a test) seeds it
 // for real -- so getState() is always well-formed even before start() runs.
@@ -109,11 +118,13 @@ function ensureInit() {
  * @param {object} deps.acEntry - the livingRoomAC config entry (address + commands)
  * @param {number} [deps.stepSpacingMs] - delay between chained IR sends; defaults to 600
  */
-function _init({ sendIr, publishState, acEntry: acEntryOverride, stepSpacingMs } = {}) {
+function _init({ sendIr, publishState, lastState, acEntry: acEntryOverride, stepSpacingMs, startSettleMs } = {}) {
     doSendIr = sendIr;
     doPublishState = publishState;
+    doLastState = lastState || (() => null);
     acEntry = acEntryOverride || null;
     STEP_SPACING_MS = Number.isFinite(stepSpacingMs) ? stepSpacingMs : 600;
+    START_SETTLE_MS = Number.isFinite(startSettleMs) ? startSettleMs : 0; // tests default to synchronous
     initialized = true;
 }
 
@@ -142,7 +153,37 @@ function publish() {
         console.log('climateShadow: no AC device entry resolved -- skipping publish');
         return;
     }
-    doPublishState(acEntry, { ...state }, 'command');
+    touchedSinceStart = true;
+    // Wire/dashboard convention: every other Apollo device publishes
+    // power as the string 'ON'/'OFF' (the dashboard checks
+    // `live.power === 'ON'`) -- convert at this publish boundary only;
+    // the internal shadow (`state.power`) stays a plain boolean.
+    doPublishState(acEntry, { ...state, power: powerToWire(state.power) }, 'command');
+}
+
+/**
+ * Converts the internal boolean shadow power to the 'ON'/'OFF' wire
+ * convention used by every other Apollo device's published state.
+ * @param {boolean} power
+ * @returns {'ON'|'OFF'}
+ */
+function powerToWire(power) {
+    return power ? 'ON' : 'OFF';
+}
+
+/**
+ * Inverse of powerToWire() -- reads a retained payload's power field back
+ * into the internal boolean shadow. Tolerant of the 'ON'/'OFF' wire strings
+ * (the normal case) as well as a legacy raw boolean that may still be sitting
+ * in a retained message from before this conversion existed.
+ * @param {*} value
+ * @returns {boolean}
+ */
+function powerFromWire(value) {
+    if (typeof value === 'string') {
+        return value === 'ON';
+    }
+    return Boolean(value);
 }
 
 function nextDebugId() {
@@ -383,27 +424,32 @@ function getState() {
 
 /**
  * Seeds the shadow at startup: if the AC's retained MQTT state survived a
- * restart (mqttTopics' merge cache, boot-seeded from retained replay -- see
- * mqttTopics.seedFromRetained()/increment 0), adopt it; otherwise fall back
- * to DEFAULT_STATE. Either way, republishes immediately so the retained topic
- * reflects what this process now believes (cheap and idempotent if nothing
- * changed). Never sends IR -- read + publish only, so this is safe in
- * dry-run and with the broker down, same as sceneShadow.start()/
- * healthMonitor.start().
+ * restart (mqttTopics' merge cache, seeded from the broker's retained replay
+ * via healthMonitor -> mqttTopics.seedFromRetained()), adopt it; otherwise
+ * fall back to DEFAULT_STATE. Then republishes so the retained topic
+ * reflects what this process now believes.
+ *
+ * TIMING: the retained replay arrives asynchronously, some moments AFTER
+ * index.js calls start() -- reading lastState() synchronously here would
+ * always see an empty cache on a real restart, publish defaults, and (since
+ * publishState fills the cache slot) cause the actual retained replay to be
+ * discarded when it lands. That silently reset the AC's assumed state
+ * (power OFF) on every deploy. So the seed + publish are DEFERRED by
+ * START_SETTLE_MS; if a real command/override arrives first (publish() sets
+ * touchedSinceStart), the deferred seed becomes a no-op -- the command
+ * already established fresher state. Never sends IR -- read + publish only,
+ * so this is safe in dry-run and with the broker down, same as
+ * sceneShadow.start()/healthMonitor.start().
  */
-function start() {
-    ensureInit();
-
-    if (!acEntry) {
-        console.log('climateShadow: livingRoomAC not found in devices config -- shadow running with defaults');
-        state = { ...DEFAULT_STATE };
-        return;
+function seedAndPublish() {
+    if (touchedSinceStart) {
+        return; // a command beat the settle window; its state is fresher
     }
 
     const retained = doLastState(acEntry);
     if (retained && typeof retained === 'object') {
         state = {
-            power: retained.power !== undefined ? Boolean(retained.power) : DEFAULT_STATE.power,
+            power: retained.power !== undefined ? powerFromWire(retained.power) : DEFAULT_STATE.power,
             mode: retained.mode === 'ECO' || retained.mode === 'COOL' ? retained.mode : DEFAULT_STATE.mode,
             setpoint: clampSetpoint(
                 retained.setpoint !== undefined ? retained.setpoint : DEFAULT_STATE.setpoint
@@ -415,6 +461,28 @@ function start() {
     }
 
     publish();
+}
+
+function start() {
+    ensureInit();
+
+    if (!acEntry) {
+        console.log('climateShadow: livingRoomAC not found in devices config -- shadow running with defaults');
+        state = { ...DEFAULT_STATE };
+        return;
+    }
+
+    if (START_SETTLE_MS <= 0) {
+        // Test path: deterministic synchronous seeding.
+        seedAndPublish();
+        return;
+    }
+
+    const timer = setTimeout(() => {
+        pendingTimers.delete(timer);
+        seedAndPublish();
+    }, START_SETTLE_MS);
+    pendingTimers.add(timer);
 }
 
 /**
@@ -429,6 +497,7 @@ function _resetForTesting() {
     pendingTimers.clear();
     state = { ...DEFAULT_STATE };
     debugCounter = 0;
+    touchedSinceStart = false;
 }
 
 module.exports = {

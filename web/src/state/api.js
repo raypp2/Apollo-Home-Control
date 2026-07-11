@@ -55,3 +55,20 @@ export async function sendCommand(pathSegments) {
   }
   return response.text();
 }
+
+/**
+ * POST a JSON body to an arbitrary dashboard endpoint (not the `/api/<MODULE>/
+ * <DEVICE>/<COMMAND>` device-command grammar -- used by dashboard-only
+ * endpoints like /api/prefs/swatches). Resolves with the parsed JSON response
+ * body; throws on a non-2xx response like the other helpers here.
+ * @param {string} path - absolute path, e.g. '/api/prefs/swatches'
+ * @param {object} body - JSON-serializable request body
+ * @returns {Promise<any>} parsed JSON body
+ */
+export function postJson(path, body) {
+  return fetchJson(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}

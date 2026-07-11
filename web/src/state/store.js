@@ -29,6 +29,7 @@
 //   connection    'connecting' | 'live' | 'polling' | 'offline'
 //   bridges       { [bridgeName]: 'online' | 'offline' }
 //   degraded      boolean
+//   prefs         object                        -- from /api/prefs, e.g. custom swatches
 //
 // This module intentionally has no MQTT/HTTP knowledge -- see mqtt.js,
 // bootstrap.js, optimistic.js for the pieces that populate it.
@@ -44,6 +45,9 @@ export const spotify = signal(null);
 export const connection = signal('connecting');
 export const bridges = signal({});
 export const degraded = signal(false);
+// GET /api/prefs at bootstrap -- e.g. custom color swatches. Nothing consumes
+// this yet; it's hydrated ahead of the feature that will read it.
+export const prefs = signal({});
 
 /**
  * @param {string} stateTopic
@@ -111,15 +115,18 @@ export function updateDevice(stateTopic, patcher) {
 
 /**
  * Replaces the scenes or macros map from a /list/lightingScenes or
- * /list/macros response, defaulting `active: false` (the real value arrives
- * over MQTT shortly after, or is left false if the broker is unreachable).
+ * /list/macros response. `active` comes from the entry itself when the
+ * backend supplies it (so an externally-activated scene/macro, e.g. via
+ * Alexa, still shows as active for a client with no live MQTT connection);
+ * it defaults to false when the field is absent. The real value also arrives
+ * over MQTT shortly after, for clients that do have a live broker connection.
  * @param {import('@preact/signals').Signal<Map<string, object>>} collectionSignal
  * @param {Array<object>} entries
  */
 export function setScenes(collectionSignal, entries) {
   const map = new Map();
   for (const entry of entries) {
-    map.set(entry.id, { ...entry, active: false });
+    map.set(entry.id, { ...entry, active: Boolean(entry.active) });
   }
   collectionSignal.value = map;
 }

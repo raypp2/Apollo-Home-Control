@@ -119,13 +119,19 @@ test('studioMacro: object-form commands run distinct on/off paths (regression fo
     try {
         const onRes = await request('/api/macros/studioMacro/on');
         assert.equal(onRes.status, 200);
-        // Let async driver logging (e.g. Somfy/DMX-style promise chains) settle.
-        await new Promise((r) => setTimeout(r, 300));
+        // Macro commands now dispatch sequentially, MACRO_COMMAND_SPACING_MS
+        // (400ms, src/handler.js) apart rather than in a parallel burst
+        // (issue: the Insteon hub dropped a command under a rapid-fire
+        // burst) -- studioMacro has 7 commands, so the last one doesn't fire
+        // until ~2.4s after the request. Wait long enough for the whole
+        // sequence (plus async driver logging, e.g. Somfy/DMX-style promise
+        // chains) to settle before inspecting output.
+        await new Promise((r) => setTimeout(r, 3000));
         const afterOn = server._getOutput();
 
         const offRes = await request('/api/macros/studioMacro/off');
         assert.equal(offRes.status, 200);
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 3000));
         const afterOff = server._getOutput();
         const offOnlyOutput = afterOff.slice(afterOn.length);
 
