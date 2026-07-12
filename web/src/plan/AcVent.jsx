@@ -7,17 +7,18 @@
 //
 // The unit itself has no fixture dot in config/rooms.json (it isn't a light
 // and doesn't get one); its plan-space position is the design's own guess,
-// on the dining room's top wall. Because that position is independent of
-// any room's own rect, this renders directly in plane space as a sibling of
-// the rooms (see Plane.jsx) rather than as a child of Room -- it inherits
-// the same isometric transform, sway, and selection pan either way since
-// both live inside .plan-inner.
+// against the back (top) wall near the dining room's bookshelf, close to
+// the apartment's top-right corner. Because that position is independent
+// of any room's own rect, this renders directly in plane space as a
+// sibling of the rooms (see Plane.jsx) rather than as a child of Room --
+// it inherits the same isometric transform, sway, and selection pan either
+// way since both live inside .plan-inner.
 
 import { store } from '../state/index.js';
 import Airflow from './Airflow.jsx';
 import './plan-ac.css';
 
-const VENT_X = 202;
+const VENT_X = 404;
 const VENT_Y = 15;
 const VENT_W = 44;
 const VENT_H = 12;

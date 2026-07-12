@@ -114,11 +114,35 @@ function fire(entry, segments, patch, trace) {
   sendCommand([entry.module, entry.id, ...segments]).catch(() => {});
 }
 
+/**
+ * Same as `fire`, minus the optimistic local patch -- for commands whose
+ * result is better represented by the backend's own live motion state than a
+ * client-side guess (see the shade dispatchers below).
+ */
+function fireCommand(entry, segments, trace) {
+  setLastAction(trace);
+  sendCommand([entry.module, entry.id, ...segments]).catch(() => {});
+}
+
 /** Toggle a light on/off. */
 export function toggle(entry) {
   const next = !isOn(entry);
   fire(entry, [next ? 'on' : 'off'], { power: next ? 'ON' : 'OFF' },
     `${entry.title} ${next ? 'on' : 'off'}`);
+}
+
+/**
+ * Toggle a device GROUP (e.g. the Studio group -- webcam + hair light, see
+ * scenes/registry.js's DEVICE_GROUPS): on if ANY member is on -> switch every
+ * member off; otherwise switch every member on. Dispatches per-device via the
+ * existing `toggle`, so each member gets its own optimistic patch + command.
+ * @param {Array<object>} entries - the group's member device entries
+ */
+export function groupToggle(entries) {
+  const anyOn = entries.some((e) => isOn(e));
+  for (const e of entries) {
+    if (isOn(e) === anyOn) toggle(e);
+  }
 }
 
 /**
@@ -180,17 +204,17 @@ export function previewPosition(entry, val) {
 }
 
 /**
- * Commit the GROUP shade position: optimistic + send + trace. Command grammar
- * is the named-key form (`/api/DEVICES/<id>/all/<0-100>`), not a bare
- * position -- see src/handler.js's Somfy-Bridge case + src/somfyBridge.js.
- * Optimistically mirrors the new position onto all three per-shade slots too
- * (a best guess -- the bridge's own group command doesn't touch `positions`
- * itself; the real per-shade MQTT events correct this shortly after).
+ * Commit the GROUP shade position: send + trace, no optimistic local patch.
+ * Command grammar is the named-key form (`/api/DEVICES/<id>/all/<0-100>`),
+ * not a bare position -- see src/handler.js's Somfy-Bridge case +
+ * src/somfyBridge.js. The bridge publishes live motion state (`moving`/
+ * `target`) itself, so the row's displayed position tracks the real shade
+ * instead of a client-side guess (a former source of stuck/incorrect
+ * positions when the guess didn't match reality).
  */
 export function commitPosition(entry, val) {
   const v = clamp(val);
-  fire(entry, ['all', String(v)], { position: v, positions: { one: v, two: v, three: v } },
-    `${entry.title} → ${v}%`);
+  fireCommand(entry, ['all', String(v)], `${entry.title} → ${v}%`);
 }
 
 /**
@@ -198,8 +222,7 @@ export function commitPosition(entry, val) {
  * `/api/DEVICES/<id>/all/OFF` (OFF = up/open, per the Somfy grammar).
  */
 export function openAllShades(entry) {
-  fire(entry, ['all', 'OFF'], { position: 0, positions: { one: 0, two: 0, three: 0 } },
-    `${entry.title} open`);
+  fireCommand(entry, ['all', 'OFF'], `${entry.title} open`);
 }
 
 /**
@@ -207,8 +230,7 @@ export function openAllShades(entry) {
  * `/api/DEVICES/<id>/all/ON` (ON = down/closed, per the Somfy grammar).
  */
 export function closeAllShades(entry) {
-  fire(entry, ['all', 'ON'], { position: 100, positions: { one: 100, two: 100, three: 100 } },
-    `${entry.title} closed`);
+  fireCommand(entry, ['all', 'ON'], `${entry.title} closed`);
 }
 
 /**
@@ -234,13 +256,12 @@ export function previewShadePosition(entry, key, val) {
 
 /**
  * Commit one named shade ('one'|'two'|'three') to a specific 0-100 position:
- * optimistic + send + trace. `/api/DEVICES/<id>/<key>/<0-100>`.
+ * send + trace, no optimistic local patch (see commitPosition's doc).
+ * `/api/DEVICES/<id>/<key>/<0-100>`.
  */
 export function commitShadePosition(entry, key, val) {
   const v = clamp(val);
-  fire(entry, [key, String(v)],
-    { positions: { ...(entry.live && entry.live.positions), [key]: v } },
-    `${entry.title} ${key} → ${v}%`);
+  fireCommand(entry, [key, String(v)], `${entry.title} ${key} → ${v}%`);
 }
 
 /**
@@ -251,9 +272,7 @@ export function commitShadePosition(entry, key, val) {
 export function toggleShadeOne(entry, key) {
   const pos = positionOfShade(entry, key) || 0;
   const opening = pos > 0;
-  const nextPos = opening ? 0 : 100;
-  fire(entry, [key, opening ? 'OFF' : 'ON'],
-    { positions: { ...(entry.live && entry.live.positions), [key]: nextPos } },
+  fireCommand(entry, [key, opening ? 'OFF' : 'ON'],
     `${entry.title} ${key} ${opening ? 'open' : 'closed'}`);
 }
 

@@ -23,11 +23,24 @@ export const selectedRoom = signal(null);
 export const lastAction = signal('');
 
 /**
+ * The most recently tapped ZONE MEMBER room, e.g. `{ roomId: 'kitchen', ts:
+ * 169... }`. Set by `selectRoom` whenever the tapped room resolves to a zone
+ * (see `selectedRoom` doc) -- `ts` always advances, even on a re-tap of the
+ * same member, so RoomPanel's effect fires again to re-trigger the scroll +
+ * flash. Consumed by RoomPanel to scroll that member's device rows into view
+ * and flash them (useful on mobile, where the shared zone panel can hold more
+ * device rows than fit on screen at once). null until the first zone-member
+ * tap of the session.
+ */
+export const focusRoom = signal(null);
+
+/**
  * Select a room (tapping it on the plane, or programmatically). Resolves a
  * zone-member room to its zone id first (see `selectedRoom` doc), so callers
- * can keep passing the tapped room's own id regardless of zone membership.
- * Passing the already-selected room id is a no-op-friendly re-set; pass null
- * to clear.
+ * can keep passing the tapped room's own id regardless of zone membership --
+ * and, when it does resolve to a zone, records the tap in `focusRoom` so the
+ * panel can scroll/flash that member's section. Passing the already-selected
+ * room id is a no-op-friendly re-set; pass null to clear.
  * @param {string|null} roomId
  */
 export function selectRoom(roomId) {
@@ -36,7 +49,12 @@ export function selectRoom(roomId) {
     return;
   }
   const room = rooms.value.find((r) => r.id === roomId);
-  selectedRoom.value = (room && room.zone) || roomId;
+  if (room && room.zone) {
+    selectedRoom.value = room.zone;
+    focusRoom.value = { roomId: room.id, ts: Date.now() };
+    return;
+  }
+  selectedRoom.value = roomId;
 }
 
 /**

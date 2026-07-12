@@ -202,33 +202,65 @@ function parseTransform(transform) {
   return { dx: 0, dy: 0, rotDeg: null, unsupported: true };
 }
 
-// Applies a single-function transform attribute to a point — exact for the
+// Full parse of a single-function transform attribute — exact for the
 // translate/matrix/rotate forms (all affine), which covers everything our
-// exporter emits and the matrices Illustrator bakes rotations into. Used for
-// aim-line endpoints, where the ANGLE between the two transformed endpoints
-// is the data being read back (so rotating an arrow in the editor works
-// whether the editor rewrote x1/y1/x2/y2 or wrapped them in a matrix).
-// A multi-function transform list comes back { unsupported: true }.
-function applyTransformToPoint(transform, x, y) {
-  if (!transform) return { x, y };
+// exporter emits AND the matrices Inkscape/Illustrator bake rotations into.
+// Returns { apply(x,y)->{x,y}, rotDeg|null, unsupported }:
+//   apply        exact point mapping (null when unparseable)
+//   rotDeg       the transform's rotation component in degrees (null when 0)
+//   unsupported  true for a multi-function list, or a matrix with real
+//                scale/skew (angle still extracted best-effort)
+// Rect positions are recovered CENTER-based with this (transform the center,
+// keep w/h, extract the angle) — live case: Inkscape rotating the kitchen
+// sink baked a rotation matrix that the old translation-only handling
+// scattered to coordinates way off the canvas.
+function transformInfo(transform) {
+  if (!transform) return { apply: null, rotDeg: null, unsupported: false };
   const t = transform.trim();
   let m = /^translate\(\s*(-?[\d.eE+-]+)(?:[,\s]+(-?[\d.eE+-]+))?\s*\)$/.exec(t);
-  if (m) return { x: x + num(m[1]), y: y + (m[2] !== undefined ? num(m[2]) : 0) };
+  if (m) {
+    const dx = num(m[1]);
+    const dy = m[2] !== undefined ? num(m[2]) : 0;
+    return { apply: (x, y) => ({ x: x + dx, y: y + dy }), rotDeg: null, unsupported: false };
+  }
   m = /^matrix\(\s*(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+)\s*\)$/.exec(t);
   if (m) {
     const [a, b, c, d, e, f] = m.slice(1).map(Number);
-    return { x: a * x + c * y + e, y: b * x + d * y + f };
+    const rigid = Math.abs(a * a + b * b - 1) < 0.01 && Math.abs(c * c + d * d - 1) < 0.01;
+    const deg = (Math.atan2(b, a) * 180) / Math.PI;
+    return {
+      apply: (x, y) => ({ x: a * x + c * y + e, y: b * x + d * y + f }),
+      rotDeg: Math.abs(deg) > 0.01 ? deg : null,
+      unsupported: !rigid,
+    };
   }
   m = /^rotate\(\s*(-?[\d.eE+-]+)(?:[,\s]+(-?[\d.eE+-]+)[,\s]+(-?[\d.eE+-]+))?\s*\)$/.exec(t);
   if (m) {
-    const rad = (num(m[1]) * Math.PI) / 180;
+    const deg = num(m[1]);
+    const rad = (deg * Math.PI) / 180;
     const cx = m[2] !== undefined ? num(m[2]) : 0;
     const cy = m[3] !== undefined ? num(m[3]) : 0;
-    const dx = x - cx;
-    const dy = y - cy;
-    return { x: cx + dx * Math.cos(rad) - dy * Math.sin(rad), y: cy + dx * Math.sin(rad) + dy * Math.cos(rad) };
+    return {
+      apply: (x, y) => {
+        const dx = x - cx;
+        const dy = y - cy;
+        return { x: cx + dx * Math.cos(rad) - dy * Math.sin(rad), y: cy + dx * Math.sin(rad) + dy * Math.cos(rad) };
+      },
+      rotDeg: Math.abs(deg) > 0.01 ? deg : null,
+      unsupported: false,
+    };
   }
-  return { x, y, unsupported: true };
+  return { apply: null, rotDeg: null, unsupported: true };
+}
+
+// Back-compat shim for aim-line endpoint mapping (only the point matters
+// there; the angle falls out of the two mapped endpoints).
+function applyTransformToPoint(transform, x, y) {
+  const info = transformInfo(transform);
+  if (info.unsupported && !info.apply) return { x, y, unsupported: true };
+  if (!info.apply) return { x, y };
+  const p = info.apply(x, y);
+  return info.unsupported ? { ...p, unsupported: true } : p;
 }
 
 function readSvg(file) {
@@ -466,44 +498,54 @@ function main() {
   const { elements, groups } = reScanWithStack(svg);
 
   // --- absolute position of each element, with transform applied ---
+  //
+  // Rects are recovered CENTER-based: the center point is mapped exactly
+  // through own + enclosing transforms (translate/matrix/rotate all work,
+  // including Inkscape's baked rotation matrices), w/h are kept as-is, and
+  // the accumulated rotation angle comes back as rotOverride. For our own
+  // exporter's <g transform="rotate(deg cx cy)"> wrapper this is a no-op on
+  // position (the rotation center IS the item center) and reproduces the
+  // angle exactly, so clean round-trips are unchanged. Kid rects inside a
+  // rotated parent get their offsets DE-rotated during assembly (see the
+  // kid mapping in main()) so rooms.json keeps unrotated-relative coords.
   function absPos(el) {
     if (el.tag === 'rect') {
-      let x = num(el.attrs.x);
-      let y = num(el.attrs.y);
       const w = num(el.attrs.width);
       const h = num(el.attrs.height);
-      const ownT = parseTransform(el.attrs.transform);
-      x += ownT.dx;
-      y += ownT.dy;
-      let rotOverride = null;
+      let cx = num(el.attrs.x) + w / 2;
+      let cy = num(el.attrs.y) + h / 2;
+      let rotDeg = 0;
       let rotUnsupportedWarning = false;
+
+      const own = transformInfo(el.attrs.transform);
+      if (own.apply) ({ x: cx, y: cy } = own.apply(cx, cy));
+      if (own.rotDeg !== null) rotDeg += own.rotDeg;
+      if (own.unsupported) rotUnsupportedWarning = true;
+
       if (el.enclosingTransform) {
-        const gT = parseTransform(el.enclosingTransform);
-        // our exporter's rotate(deg cx cy) is cosmetic-only for rect x/y
-        // (rotation happens around an explicit point, doesn't rewrite the
-        // child's x/y attribute) so we only need to react to it if the
-        // angle itself changed, or if it got flattened into a matrix.
-        if (gT.rotDeg !== null) rotOverride = `${gT.rotDeg}deg`;
-        else if (gT.unsupported) rotUnsupportedWarning = true;
-        else {
-          x += gT.dx;
-          y += gT.dy;
-        }
+        const g = transformInfo(el.enclosingTransform);
+        if (g.apply) ({ x: cx, y: cy } = g.apply(cx, cy));
+        if (g.rotDeg !== null) rotDeg += g.rotDeg;
+        if (g.unsupported) rotUnsupportedWarning = true;
       }
-      return { x, y, w, h, rotOverride, rotUnsupportedWarning };
+
+      return {
+        x: cx - w / 2,
+        y: cy - h / 2,
+        w,
+        h,
+        rotOverride: Math.abs(rotDeg) > 0.01 ? `${Math.round(rotDeg * 100) / 100}deg` : null,
+        rotUnsupportedWarning,
+      };
     }
-    // circle
+    // circle — a point; map it through both transforms exactly.
     let cx = num(el.attrs.cx);
     let cy = num(el.attrs.cy);
-    const ownT = parseTransform(el.attrs.transform);
-    cx += ownT.dx;
-    cy += ownT.dy;
+    const own = transformInfo(el.attrs.transform);
+    if (own.apply) ({ x: cx, y: cy } = own.apply(cx, cy));
     if (el.enclosingTransform) {
-      const gT = parseTransform(el.enclosingTransform);
-      if (!gT.unsupported && gT.rotDeg === null) {
-        cx += gT.dx;
-        cy += gT.dy;
-      }
+      const g = transformInfo(el.enclosingTransform);
+      if (g.apply) ({ x: cx, y: cy } = g.apply(cx, cy));
     }
     return { x: cx, y: cy };
   }
@@ -735,11 +777,30 @@ function main() {
           if (f.rot != null) item.rot = f.rot;
           const kidMap = kidsByRoom.get(room.id)?.get(idxKey);
           if (kidMap) {
+            // rooms.json kid coords are relative to the UNROTATED parent
+            // (rotation is applied visually to the whole group at render
+            // time). When the parent carries a rotation, absPos gave us the
+            // kids' ROTATED centers -- de-rotate each offset around the
+            // parent center to recover the stored form. Exact inverse of
+            // the exporter's rotate(deg parentCx parentCy) wrapper.
+            const rotDeg = parseRotDegIn(item.rot);
+            const derotate = (k) => {
+              if (!rotDeg) return { x: k.x - f.x, y: k.y - f.y };
+              const rad = (-rotDeg * Math.PI) / 180;
+              const pcx = f.x + f.w / 2;
+              const pcy = f.y + f.h / 2;
+              const ox = (k.x + k.w / 2) - pcx;
+              const oy = (k.y + k.h / 2) - pcy;
+              const rx = ox * Math.cos(rad) - oy * Math.sin(rad);
+              const ry = ox * Math.sin(rad) + oy * Math.cos(rad);
+              return { x: pcx + rx - k.w / 2 - f.x, y: pcy + ry - k.h / 2 - f.y };
+            };
             item.kids = orderedKeys(kidMap).map((ki) => {
               const k = kidMap.get(ki);
+              const rel = derotate(k);
               return {
-                x: round(k.x - f.x),
-                y: round(k.y - f.y),
+                x: round(rel.x),
+                y: round(rel.y),
                 w: round(k.w),
                 h: round(k.h),
                 r: k.r,
@@ -817,6 +878,15 @@ function main() {
 function round(n) {
   const r = Math.round(n * 1000) / 1000;
   return Object.is(r, -0) ? 0 : r;
+}
+
+// Parses a rooms.json rot value ("40deg", "-45deg", or a bare number) to
+// degrees; 0/null/unparseable -> 0. Mirror of floorplan-export's parseRotDeg.
+function parseRotDegIn(rot) {
+  if (rot == null) return 0;
+  const m = /(-?[\d.]+)\s*deg/.exec(String(rot));
+  const f = m ? parseFloat(m[1]) : parseFloat(rot);
+  return Number.isFinite(f) ? f : 0;
 }
 
 function diffSummary(before, after) {

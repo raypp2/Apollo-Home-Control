@@ -1,0 +1,24 @@
+/* Apollo v2 dashboard -- Room Command Panel styles that need real CSS
+   (keyframe animation); everything else in panel/ stays inline styles,
+   matching the rest of the panel components. */
+
+/* Zone-member focus flash (task: tapping a zone-member room on the plane
+   scrolls that member's device rows into view and briefly flashes them --
+   see RoomPanel's `focusRoom` effect and ui.js's `focusRoom` signal). Applied
+   as a transient class, removed after the animation finishes, so re-tapping
+   the same member re-triggers it (RoomPanel removes+re-adds the class on a
+   fresh ui.focusRoom tick rather than relying on animation restart alone). */
+.panel-member-section {
+  border-radius: var(--r-row, 11px);
+  padding: 6px;
+  margin: -6px;
+}
+
+.panel-member-section.member-flash {
+  animation: panel-member-flash 1.5s ease-out;
+}
+
+@keyframes panel-member-flash {
+  0% { background: rgba(166, 136, 232, 0.35); }
+  100% { background: transparent; }
+}

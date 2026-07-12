@@ -20,3 +20,68 @@
 .av-eq-bar:nth-child(1) { height: 10px; animation-delay: -0.6s; }
 .av-eq-bar:nth-child(2) { height: 14px; animation-delay: -0.3s; }
 .av-eq-bar:nth-child(3) { height: 8px; animation-delay: 0s; }
+
+/* Drawer easing (increment: AV/panel polish) -------------------------------
+   Shared by NowPlaying (shows only while the receiver is on AND playing
+   through the Spotify input) and AvCluster's OFF-picker <-> ON-controls
+   swap: stays mounted always (never unmounts, so the close direction
+   animates too, not just the open), and the outer element carries ONLY the
+   max-height/opacity/transform transition -- no padding or border of its
+   own, since box-sizing:border-box would otherwise force the box to render
+   at least padding+border tall regardless of max-height:0. Padding/border
+   live on .av-drawer-inner instead. */
+.av-drawer {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    max-height 320ms var(--ease-turn, ease),
+    opacity 220ms ease,
+    transform 320ms var(--ease-turn, ease);
+}
+
+.av-drawer.is-open {
+  max-height: 160px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.av-drawer-inner {
+  padding-top: 10px;
+}
+
+/* Receiver input "confirming" chase (increment: AV/panel polish) -----------
+   A rotating conic-gradient ring around a just-tapped source button, shown
+   until the live state confirms it (or it times out) -- see AvCluster's
+   `pendingInput`. Pure CSS: a pseudo-element ring masked down to just its
+   own border-width via the padding+mask-composite trick, so the button's
+   normal background/border underneath stays untouched. */
+.av-input-pending {
+  position: relative;
+}
+
+.av-input-pending::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    var(--accent, #a688e8) 30%,
+    transparent 60%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: av-input-chase 1.2s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes av-input-chase {
+  to { transform: rotate(360deg); }
+}

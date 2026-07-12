@@ -19,14 +19,27 @@ const ROW_BG = 'rgba(234, 229, 239, 0.03)';
 const OFF_DOT = 'rgba(234, 229, 239, 0.18)';
 const AMBER = 'var(--amber, #f2a65e)';
 
-function positionLabel(position) {
-  if (position <= 0) return 'Open';
-  if (position >= 100) return 'Closed';
-  return `${position}%`;
+// Status text for the row: while the bridge reports active motion (`live.moving`,
+// published the instant a command goes out -- see src/somfyBridge.js's
+// publishCommandMotionState -- and confirmed/corrected ~1s later by the native
+// `direction` event), show which way it's headed using the LIVE position, which
+// streams in from the bridge's position events roughly every 0.4s and is what
+// actually animates the fill bar. This is deliberately never a locally-guessed
+// value: a shade takes ~37s to travel, so claiming an end state instantly (the
+// old behavior) made the status jump to "Closed" and then crawl back open as
+// the real position caught up. Idle (moving absent/null) falls back to a plain
+// position readout.
+function statusLabel(position, moving) {
+  if (moving === 'down') return `Closing · ${position}%`;
+  if (moving === 'up') return `Opening · ${position}%`;
+  if (position <= 1) return 'Open';
+  if (position >= 99) return 'Closed';
+  return `${position}% closed`;
 }
 
 function ShadeRow({ entry }) {
   const view = commands.deviceView(entry);
+  const live = (entry && entry.live) || {};
   const [drillInOpen, setDrillInOpen] = useState(false);
 
   const gesture = useDragGesture({
@@ -126,7 +139,7 @@ function ShadeRow({ entry }) {
             color: 'var(--text, #eae5ef)',
           }}
         >
-          {positionLabel(view.position)}
+          {statusLabel(view.position, live.moving)}
         </span>
       </div>
     </div>

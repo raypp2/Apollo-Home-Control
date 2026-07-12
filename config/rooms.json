@@ -70,11 +70,35 @@
         r: "2px",
       },
       {
-        x: -113.388,
-        y: 167.198,
+        x: 5.7,
+        y: 164.6,
         w: 44.614,
         h: 30.787,
         r: "2px",
+        rot: "-40deg",
+        kids: [
+          {
+            x: 16,
+            y: 3.5,
+            w: 22.435,
+            h: 23.456,
+            r: "3px",
+          },
+          {
+            x: 5,
+            y: 7,
+            w: 6,
+            h: 6,
+            r: "50%",
+          },
+          {
+            x: 5,
+            y: 17,
+            w: 6,
+            h: 6,
+            r: "50%",
+          },
+        ],
       },
       {
         x: 2.086,
@@ -88,13 +112,6 @@
         y: 25.182,
         w: 13.236,
         h: 11.008,
-        r: "2px",
-      },
-      {
-        x: -100.288,
-        y: 170.568,
-        w: 22.435,
-        h: 23.456,
         r: "2px",
       },
       {
@@ -402,9 +419,15 @@
         y: 172.796,
         aim: 180,
       },
+      // Rect emitter: x/y is the CENTER, w/h the emitting area (the art wall
+      // runs along the right wall behind the couch); glow "rainbow" renders
+      // a subtle static spectrum wash instead of the single-color pool.
       "led-art-wall": {
-        x: 258.197,
-        y: 83.897,
+        x: 261,
+        y: 85,
+        w: 8,
+        h: 150,
+        glow: "rainbow",
       },
       accent: {
         x: 250.61,

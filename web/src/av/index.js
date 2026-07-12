@@ -7,6 +7,7 @@ import AvCluster from './AvCluster.jsx';
 
 export default AvCluster;
 export { AvCluster };
+export { isSpotifyInputNumber } from './AvCluster.jsx';
 export { default as NowPlaying } from './NowPlaying.jsx';
 export { default as AvDrillIn } from './AvDrillIn.jsx';
 export { default as VolumeBar, DB_MIN, DB_MAX, pctToDb, dbToPct } from './VolumeBar.jsx';

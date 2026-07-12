@@ -36,6 +36,19 @@ export const ROOM_SCENES = {
 };
 
 /**
+ * Panel device groups: consolidate a few individually-configured devices into
+ * one expandable row in the room command panel (RoomPanel/GroupRow), rather
+ * than each showing as its own DeviceRow. `members` lists the underlying
+ * device ids in display order; the group row replaces them at the position
+ * of whichever member appears first in the room's device list. `room` is the
+ * plain room id the group belongs to (used to place it within the right
+ * zone-member section on a shared zone panel).
+ */
+export const DEVICE_GROUPS = [
+  { id: 'studio', title: 'Studio', room: 'office', members: ['webcam', 'hair-light'] },
+];
+
+/**
  * ROOM_SCENES entries for a zone's member rooms, in member order. A "common"
  * zone (kitchen/dining/living/office) spans multiple ROOM_SCENES entries
  * (living, office today) -- the zone panel shows all of them as presets

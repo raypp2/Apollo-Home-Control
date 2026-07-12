@@ -20,9 +20,29 @@
  *                to the shared broker under its root topic
  *                `apollo/<location>/somfy`) and republishes canonical state via
  *                mqttTopics -- see startSomfyListener(). Commands stay on HTTP
- *                (send_somfy_command); the MQTT event is only a normalizer +
- *                optimistic-state layer, per
- *                documentation/mqtt-implementation-detail.md Stage 2.
+ *                (send_somfy_command); the MQTT events are the normalizer +
+ *                state layer, per documentation/mqtt-implementation-detail.md
+ *                Stage 2.
+ *
+ *                A shade takes real time to travel (~37s end to end), so the
+ *                canonical state NEVER claims a shade has already reached its
+ *                commanded position -- only the bridge's native `position`
+ *                events (streaming ~every 0.4s during motion) are allowed to
+ *                move `position`/`positions`. What send_somfy_command DOES
+ *                publish immediately is the MOTION it just requested: `moving`
+ *                ('down'|'up'|null) and the commanded `target` (0-100), so the
+ *                UI can show "Closing · 34%" using the live-streamed position
+ *                while travel is in progress, instead of jumping straight to
+ *                the final state and then crawling back as real events catch
+ *                up. The native `direction` topic (1 = closing, -1 = opening,
+ *                0 = stopped) confirms/corrects `moving` within about a
+ *                second and is the sole trigger for clearing it back to null
+ *                when motion ends -- see _handleDirection(). Because Somfy RTS
+ *                is one-way and ESPSomfy dead-reckons each channel
+ *                independently, a GROUP command's member shades never report
+ *                their own position/direction; when the group's direction
+ *                goes to 0, _handleDirection() snapshots the group's final
+ *                position onto every member's cached `positions` entry.
  *
  */
 
@@ -89,6 +109,33 @@ function shadeIdMapping(entry) {
     return { groupId, idToName };
 }
 
+/**
+ * Copies whichever of `positions`/`moving`/`target`/`movingShades` are
+ * present in `cached` onto `state`, so every publish is self-contained
+ * regardless of mqttTopics.publishState()'s own (separate) merge-with-
+ * previous behavior -- same rationale as `positions` always being fully
+ * reattached (see the positionsCache module doc comment above).
+ * `moving`/`target` use an explicit hasOwnProperty check rather than
+ * truthiness, because their meaningful "at rest" value is `null`, not
+ * absence -- a falsy-check would skip republishing a legitimate `null`.
+ * @param {object} cached - this entry's positionsCache slot
+ * @param {object} state - the publish payload being built; mutated in place
+ */
+function attachCachedExtras(cached, state) {
+    if (cached.positions) {
+        state.positions = cached.positions;
+    }
+    if (Object.prototype.hasOwnProperty.call(cached, 'moving')) {
+        state.moving = cached.moving;
+    }
+    if (Object.prototype.hasOwnProperty.call(cached, 'target')) {
+        state.target = cached.target;
+    }
+    if (cached.movingShades) {
+        state.movingShades = cached.movingShades;
+    }
+}
+
 function send_somfy_command (address, id, command, operation_num) {
 
   if (DRY_RUN) {
@@ -145,70 +192,107 @@ function send_somfy_command (address, id, command, operation_num) {
 
   console.log("%d - Sent Command: %s", operation_num, command);
 
-  // Optimistic state: the native MQTT shades/<id>/position event confirms (or
-  // corrects) this within seconds, per Stage 2 of the MQTT plan. Map the
-  // command to the position it should settle at; "STOP" and anything else
-  // unrecognized have no predictable resulting position, so we skip.
-  let expectedPosition;
-  if (command === "ON" || !command) {
-      // A falsy command means the dispatch above assumed ON/down (see the
-      // "When no command is passed" branch) -- mirror that here, otherwise
-      // the optimistic state would say open while the shade closes.
-      expectedPosition = 100;
-  } else if (command === "OFF") {
-      expectedPosition = 0;
-  } else if (!isNaN(command)) {
-      expectedPosition = Number(command);
-  } else {
-      // STOP or unrecognized -- resulting position is unknown, skip publish.
-      return;
-  }
-
   const entry = findDeviceByAddress(address);
   if (!entry) {
       return;
   }
 
-  // Which shade id did this command target -- the group, or one of the
-  // individually-named shades? Only touch the field that actually changed:
-  // the top-level `position` for a group command, or that shade's entry
-  // inside `positions` for an individual one -- see shadeIdMapping() and the
-  // positionsCache module doc comment above.
-  const mapping = shadeIdMapping(entry);
-  const cacheKey = mqttTopics.topicFor(entry, 'state');
-  const cached = positionsCache.get(cacheKey) || {};
+  publishCommandMotionState(entry, id, command);
+}
 
-  const state = {};
-  if (String(id) === mapping.groupId) {
-      cached.position = expectedPosition;
-      state.position = expectedPosition;
-      // A group-channel RTS broadcast physically moves EVERY member shade,
-      // but Somfy RTS is one-way and ESPSomfy dead-reckons each channel
-      // independently -- it emits no member position events for a group
-      // command, so the members' last-known positions would go stale
-      // (live-verified: open-all left a shade's cached position at 20).
-      // Optimistically move every named member along with the group.
-      if (mapping.idToName.size > 0) {
-          cached.positions = { ...(cached.positions || {}) };
-          for (const name of mapping.idToName.values()) {
-              cached.positions[name] = expectedPosition;
-          }
-      }
-  } else if (mapping.idToName.has(String(id))) {
-      cached.positions = { ...(cached.positions || {}), [mapping.idToName.get(String(id))]: expectedPosition };
-  } else {
-      // Unrecognized shade id -- nothing we can confidently update.
-      return;
-  }
+/**
+ * Publishes the MOTION this command just requested -- never the final
+ * position (see the module doc comment for the rationale). Extracted from
+ * send_somfy_command so it's independently unit-testable without an HTTP
+ * call or booting index.js (see test/somfyBridge.test.js).
+ *
+ * Sets/caches:
+ *  - `moving`: 'down' (closing) | 'up' (opening) | null (stopped), or left
+ *    untouched (cached value unchanged) when a numeric target's direction
+ *    can't be inferred yet -- no cached current position to compare
+ *    against. The native `direction` event (_handleDirection below)
+ *    confirms/corrects this within about a second either way.
+ *  - `target`: the commanded 0-100 position, or null for STOP.
+ *  - `movingShades`: which individually-named shade(s) this command's id
+ *    affects -- every member for a group command, the one named shade for
+ *    an individual command.
+ *
+ * Deliberately never touches `position`/`positions` -- those fields only
+ * ever move from the bridge's own native position/direction events (see
+ * _handlePosition/_handleDirection below), so the displayed position is
+ * always the real, physically-confirmed one, not a guess made before the
+ * shade has even started moving.
+ * @param {object} entry - a devices.json "Somfy-Bridge" entry
+ * @param {string|number} id - the ESPSomfy shade id this command targeted
+ * @param {string} command - "ON"|"OFF"|"STOP"|<0-100 target>|falsy (=ON)
+ */
+function publishCommandMotionState(entry, id, command) {
+    const mapping = shadeIdMapping(entry);
+    const cacheKey = mqttTopics.topicFor(entry, 'state');
+    const cached = positionsCache.get(cacheKey) || {};
 
-  positionsCache.set(cacheKey, cached);
-  if (cached.positions) {
-      // Always attach the full cache, even for a group-only change, so this
-      // publish is self-contained regardless of mqttTopics' own merge.
-      state.positions = cached.positions;
-  }
+    // Which shade(s) does this command's id affect -- mirrors the position/
+    // direction handlers' own id resolution (see shadeIdMapping()).
+    let movingShades;
+    if (String(id) === mapping.groupId) {
+        movingShades = Array.from(mapping.idToName.values());
+    } else if (mapping.idToName.has(String(id))) {
+        movingShades = [mapping.idToName.get(String(id))];
+    } else {
+        // Unrecognized shade id -- nothing we can confidently publish.
+        return;
+    }
 
-  mqttTopics.publishState(entry, state, 'command');
+    // `moving` staying `undefined` means "leave the cached value alone" --
+    // only the numeric-target branch below can legitimately not know a
+    // direction yet.
+    let moving;
+    let target;
+    if (command === 'STOP') {
+        moving = null;
+        target = null;
+    } else if (command === 'ON' || !command) {
+        // A falsy command means the dispatch above assumed ON/down (see the
+        // "When no command is passed" branch in send_somfy_command) -- mirror
+        // that here, otherwise this would say opening while the shade closes.
+        moving = 'down';
+        target = 100;
+    } else if (command === 'OFF') {
+        moving = 'up';
+        target = 0;
+    } else if (!isNaN(command)) {
+        target = Number(command);
+        const currentPosition = String(id) === mapping.groupId
+            ? cached.position
+            : (cached.positions && cached.positions[mapping.idToName.get(String(id))]);
+        if (typeof currentPosition === 'number') {
+            if (target > currentPosition) {
+                moving = 'down';
+            } else if (target < currentPosition) {
+                moving = 'up';
+            } else {
+                moving = null;
+            }
+        }
+        // else: currentPosition unknown -- `moving` stays undefined (cached
+        // value untouched) until the direction event arrives.
+    } else {
+        // Unrecognized command -- send_somfy_command's own dispatch switch
+        // already returns before sending the HTTP request in this case, so
+        // this is unreachable in practice; kept defensive.
+        return;
+    }
+
+    if (moving !== undefined) {
+        cached.moving = moving;
+    }
+    cached.target = target;
+    cached.movingShades = movingShades;
+    positionsCache.set(cacheKey, cached);
+
+    const state = {};
+    attachCachedExtras(cached, state);
+    mqttTopics.publishState(entry, state, 'command');
 }
 
 /**
@@ -333,10 +417,96 @@ function _handlePosition(topic, payload) {
     }
 
     positionsCache.set(cacheKey, cached);
-    if (cached.positions) {
-        state.positions = cached.positions;
+    attachCachedExtras(cached, state);
+
+    mqttTopics.publishState(entry, state, 'event');
+}
+
+/**
+ * Handler for `apollo/+/somfy/shades/+/direction`. Payload is 1 (moving
+ * down/closing), -1 (moving up/opening), or 0 (stopped). Mirrors
+ * _handlePosition's id resolution/logging (shadeIdMapping(), the ignored/
+ * unknown-device logging sets), but drives `moving`/`target`/`movingShades`
+ * instead of `position`.
+ *
+ * On direction != 0, publishes `moving` for whichever shade(s) this event's
+ * id represents (every member for the group id, one name for an individual
+ * id) -- this is the authoritative source for `moving`, confirming/
+ * correcting send_somfy_command's own command-time guess (see
+ * publishCommandMotionState) within about a second, and also picking up
+ * motion triggered by something other than an Apollo-issued command (e.g.
+ * the physical remote, or the ESPSomfy app itself).
+ *
+ * On direction == 0 (motion ended), clears `moving`/`target`/`movingShades`.
+ * If the shade that stopped is the GROUP id, this is also the only
+ * opportunity to correct the individually-named shades' cached `positions`:
+ * a group RTS broadcast physically moves every member shade, but ESPSomfy's
+ * one-way dead-reckoning never emits member position events for a group
+ * command (see shadeIdMapping()'s doc comment) -- so each member's cached
+ * position is snapshotted to the group's own (now-confirmed-real) final
+ * position here. This replaces the old command-time optimistic member sync,
+ * which guessed the final position before the shade had even started moving.
+ * @param {string} topic
+ * @param {*} payload
+ */
+function _handleDirection(topic, payload) {
+    const parts = topic.split('/');
+    const shadeId = parts.length >= 5 ? parts[4] : undefined;
+
+    if (!shadeId) {
+        return;
     }
 
+    const direction = Number(payload);
+    if (typeof payload === 'object' || payload === '' || payload === null || Number.isNaN(direction)
+        || (direction !== 1 && direction !== 0 && direction !== -1)) {
+        console.log('Somfy MQTT: malformed direction payload on %s: %s', topic, JSON.stringify(payload));
+        return;
+    }
+
+    const entry = resolveShadeEntry(topic);
+    if (!entry) {
+        logUnknownDevice(topic, parts.slice(0, 4).join('/'));
+        return;
+    }
+
+    const mapping = shadeIdMapping(entry);
+    const cacheKey = mqttTopics.topicFor(entry, 'state');
+    const cached = positionsCache.get(cacheKey) || {};
+
+    let movingShades;
+    if (shadeId === mapping.groupId) {
+        movingShades = Array.from(mapping.idToName.values());
+    } else if (mapping.idToName.has(shadeId)) {
+        movingShades = [mapping.idToName.get(shadeId)];
+    } else {
+        if (!loggedIgnoredShadeIds.has(shadeId)) {
+            loggedIgnoredShadeIds.add(shadeId);
+            console.log('Somfy MQTT: ignoring direction for untracked shade id "%s" (topic %s)', shadeId, topic);
+        }
+        return;
+    }
+
+    if (direction === 0) {
+        cached.moving = null;
+        cached.target = null;
+        cached.movingShades = [];
+
+        if (shadeId === mapping.groupId && mapping.idToName.size > 0 && typeof cached.position === 'number') {
+            cached.positions = { ...(cached.positions || {}) };
+            for (const name of mapping.idToName.values()) {
+                cached.positions[name] = cached.position;
+            }
+        }
+    } else {
+        cached.moving = direction === 1 ? 'down' : 'up';
+        cached.movingShades = movingShades;
+    }
+
+    positionsCache.set(cacheKey, cached);
+
+    const state = {};
+    attachCachedExtras(cached, state);
     mqttTopics.publishState(entry, state, 'event');
 }
 
@@ -368,13 +538,14 @@ function _handleBridgeStatus(topic, payload) {
 }
 
 /**
- * Subscribes to the ESPSomfy-RTS bridge's native per-shade position topics
- * and bridge-level LWT status across all locations. Safe to call once at
- * startup (mirrors the other listener modules); the subscription registry in
- * mqttClient survives reconnects on its own.
+ * Subscribes to the ESPSomfy-RTS bridge's native per-shade position and
+ * direction topics, and bridge-level LWT status, across all locations. Safe
+ * to call once at startup (mirrors the other listener modules); the
+ * subscription registry in mqttClient survives reconnects on its own.
  */
 function startSomfyListener() {
     mqttClient.subscribe('apollo/+/somfy/shades/+/position', _handlePosition);
+    mqttClient.subscribe('apollo/+/somfy/shades/+/direction', _handleDirection);
     mqttClient.subscribe('apollo/+/somfy/status', _handleBridgeStatus);
 }
 
@@ -382,5 +553,7 @@ module.exports = {
     send_somfy_command,
     startSomfyListener,
     _handlePosition,
+    _handleDirection,
     _handleBridgeStatus,
+    _publishCommandMotionState: publishCommandMotionState,
 };

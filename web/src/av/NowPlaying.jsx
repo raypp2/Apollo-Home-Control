@@ -72,29 +72,32 @@ function AlbumArt({ src }) {
  * @param {object} props.spotifyEntry - the Spotify device/config entry, passed
  *   through to commands.spotifyPlayPause (not read from the store -- that's
  *   the now-playing payload, a separate thing from the device entry).
- * @param {boolean} [props.receiverOn] - whether the Anthem receiver is
- *   currently on. Spotify's own "now playing" state persists on Spotify's
- *   servers regardless of whether anything in the room is actually audible,
- *   so with the receiver off this renders the idle state even if Spotify
- *   reports an active track -- there's nothing to actually be playing here.
+ * @param {boolean} [props.open] - whether the drawer should be showing: true
+ *   only while the receiver is ON and its current input is the Spotify input
+ *   (see av/AvCluster.jsx's `isSpotifyInputNumber`, applied by RoomPanel).
+ *   Spotify's own "now playing" state persists on Spotify's servers
+ *   regardless of whether anything in the room is actually audible, so this
+ *   stays mounted-but-closed rather than unmounting -- both so the close
+ *   direction animates (see .av-drawer in av.css) and so reopening doesn't
+ *   flash stale content while the next track's data catches up.
  */
-function NowPlaying({ spotifyEntry, receiverOn = true }) {
+function NowPlaying({ spotifyEntry, open = false }) {
   const nowPlaying = store.spotify.value;
-  const nothingPlaying = !receiverOn || !nowPlaying || nowPlaying.reachable === false;
+  const nothingPlaying = !nowPlaying || nowPlaying.reachable === false;
 
   return (
-    <div
-      style={{
-        minHeight: STRIP_HEIGHT,
-        flexShrink: 0,
-        paddingTop: 10,
-        borderTop: '1px solid var(--hairline, rgba(234, 229, 239, 0.1))',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-      }}
-    >
-      {nothingPlaying ? (
+    <div className={`av-drawer${open ? ' is-open' : ''}`}>
+      <div
+        className="av-drawer-inner"
+        style={{
+          minHeight: STRIP_HEIGHT,
+          borderTop: '1px solid var(--hairline, rgba(234, 229, 239, 0.1))',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        {nothingPlaying ? (
         <>
           <AlbumArt src={null} />
           <div
@@ -173,6 +176,7 @@ function NowPlaying({ spotifyEntry, receiverOn = true }) {
           </button>
         </>
       )}
+      </div>
     </div>
   );
 }

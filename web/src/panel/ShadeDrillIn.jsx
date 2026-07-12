@@ -14,7 +14,13 @@
 //
 // Each of the three named shades ('one'/'two'/'three') get their own tap-to-
 // toggle + drag-to-set row, fed by `entry.live.positions` (absent until the
-// bridge has published at least one event for that shade -- shown as '—').
+// bridge has published at least one event for that shade -- shown as '—'),
+// plus `entry.live.moving`/`entry.live.movingShades` for a "Closing · 34%" /
+// "Opening · 62%" status while that specific shade is one of the ones the
+// backend reports in motion (see ShadeRow.jsx's statusLabel doc comment for
+// why this is always the live, bridge-reported position/direction and never
+// a locally-guessed one). All three fields may be entirely absent on an old
+// retained payload -- tolerated throughout.
 
 import { commands } from '../state/index.js';
 import { useDragGesture } from './useDragGesture.js';
@@ -33,11 +39,22 @@ const SHADES = [
   { key: 'three', label: 'Shade Three' },
 ];
 
-function positionLabel(position) {
+// Same treatment as ShadeRow's statusLabel: while this specific named shade
+// is one of the ones the bridge reports active motion for (`live.moving` set
+// AND `live.movingShades` includes this shade's key -- both absent/tolerated
+// on an old retained payload, or when only a DIFFERENT shade in the group is
+// moving), show direction + the live per-shade position. Never a local
+// guess -- see ShadeRow.jsx's statusLabel doc comment for why.
+function positionLabel(position, moving) {
+  // A command's motion-state publish can arrive fractionally before this
+  // shade's very first position event ever has -- tolerate `position` still
+  // being unknown while already moving, rather than rendering "null%".
+  if (moving === 'down') return position == null ? 'Closing' : `Closing · ${position}%`;
+  if (moving === 'up') return position == null ? 'Opening' : `Opening · ${position}%`;
   if (position == null) return '—';
-  if (position <= 0) return 'Open';
-  if (position >= 100) return 'Closed';
-  return `${position}%`;
+  if (position <= 1) return 'Open';
+  if (position >= 99) return 'Closed';
+  return `${position}% closed`;
 }
 
 /**
@@ -50,6 +67,10 @@ function ShadeSubRow({ entry, shadeKey, label }) {
   const position = commands.positionOfShade(entry, shadeKey);
   const value = position == null ? 0 : position;
   const on = value > 0;
+
+  const live = (entry && entry.live) || {};
+  const movingShades = live.movingShades || [];
+  const shadeMoving = live.moving && movingShades.includes(shadeKey) ? live.moving : null;
 
   const gesture = useDragGesture({
     startValue: value,
@@ -129,7 +150,7 @@ function ShadeSubRow({ entry, shadeKey, label }) {
             color: 'var(--text, #eae5ef)',
           }}
         >
-          {positionLabel(position)}
+          {positionLabel(position, shadeMoving)}
         </span>
       </div>
     </div>
