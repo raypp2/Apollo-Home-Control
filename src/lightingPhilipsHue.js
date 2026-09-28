@@ -160,7 +160,7 @@ function rgbToHueSat(r, g, b) {
 /**
  * Publishes optimistic (source:"command") state for a group command that
  * just succeeded. ON/OFF publish just the power field; a numeric brightness
- * command implies the group is now on at that level; a COLOR command
+ * command implies the group is now on at that level (0 means off); a COLOR command
  * publishes the group as on plus the normalized '#rrggbb' color. Any other
  * value (should be unreachable -- hue_group_command already branched on
  * these same cases to build groupState) is skipped. No-op if the group has
@@ -186,7 +186,9 @@ function publishOptimisticGroupState(groupHue, lighting_command, colorHex) {
       mqttTopics.publishState(entry, { power: 'ON', color: '#' + colorHex.toLowerCase() }, 'command');
     }
   } else if (!isNaN(lighting_command)) {
-    mqttTopics.publishState(entry, { power: 'ON', brightness: Number(lighting_command) }, 'command');
+    const level = Number(lighting_command);
+    // Matches hue_group_command: a level of 0 was sent as OFF.
+    mqttTopics.publishState(entry, level > 0 ? { power: 'ON', brightness: level } : { power: 'OFF' }, 'command');
   }
 }
 
@@ -212,8 +214,15 @@ async function hue_group_command(operation_num, groupHue, lighting_command, colo
       // Setting a color implies power ON.
       groupState = new GroupLightState().on().hue(hue).saturation(sat);
       colorHex = rgb.hex; // normalized for publishOptimisticGroupState below
+    } else if (Number(lighting_command) <= 0) {
+      // Hue has no "brightness 0": bri bottoms out at 1, so a bare
+      // brightness(0) leaves the group ON at its dimmest while every
+      // dashboard slider meant "off" by dragging to the bottom.
+      groupState = new GroupLightState().off();
     } else {
-      groupState = new GroupLightState().brightness(lighting_command);
+      // Explicit on(): a brightness change alone doesn't wake a group that's
+      // off, but a slider drag on an off light should turn it on.
+      groupState = new GroupLightState().on().brightness(lighting_command);
     }
 
     await api.groups.setGroupState(groupHue, groupState);

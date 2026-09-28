@@ -59,9 +59,11 @@ function deviceTileProps(entry, openSheet) {
   return {
     key: entry.stateTopic || entry.id,
     name: shortTitle(view.title),
-    value: isDim ? (view.on ? `${view.level}%` : 'Off') : (view.on ? 'On' : 'Off'),
+    // A light that's on is never "0%": Hue reports its dimmest step (bri 1
+    // of 254) as a fraction of a percent, which rounds down to 0.
+    value: isDim ? (view.on ? `${Math.max(1, view.level)}%` : 'Off') : (view.on ? 'On' : 'Off'),
     on: view.on,
-    level: isDim ? view.level : null,
+    level: isDim ? (view.on ? Math.max(1, view.level) : 0) : null,
     color: isColor && view.on ? view.color : null,
     dimmed: view.reachable === false || view.stale,
     pending: view.unconfirmed,
