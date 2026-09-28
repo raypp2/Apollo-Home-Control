@@ -1,5 +1,5 @@
-/* Apollo "next" preview layout -- mobile-first second page (web/next.html,
-   served at /next). Phone-first vertical stack: header / scene row / small
+/* Apollo mobile-first dashboard (web/index.html, served at `/`; the classic
+   split-view dashboard lives at /classic). Phone-first vertical stack: header / scene row / small
    floorplan / tab bar / scrolling tab content / pinned Dock, with a slim
    problem banner above the Dock instead of the classic dashboard's always-on
    StatusStrip. Desktop (>=900px) reflows to plane-left + fixed right rail,

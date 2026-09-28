@@ -14,13 +14,13 @@ export default defineConfig({
     outDir: '../public/app',
     emptyOutDir: true,
     rollupOptions: {
-      // Multi-page build: the classic dashboard (index.html -> main.jsx) plus
-      // the mobile-first "next" preview layout (next.html -> src/next/main.jsx,
-      // see src/webServer.js's `/next` route). Both share the same state layer
-      // and build output directory.
+      // Multi-page build: the mobile-first dashboard (index.html ->
+      // src/next/main.jsx, served at `/`) plus the classic split-view
+      // dashboard (classic.html -> src/main.jsx, see src/webServer.js's
+      // `/classic` route). Both share the same state layer and output dir.
       input: {
         main: resolve(__dirname, 'index.html'),
-        next: resolve(__dirname, 'next.html'),
+        classic: resolve(__dirname, 'classic.html'),
       },
     },
   },

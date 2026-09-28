@@ -191,13 +191,16 @@ app.get('/legacy', function(req, res) {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-// Serves the mobile-first "next" preview layout (a second Vite page built
-// alongside the main dashboard -- see web/vite.config.js's multi-page
-// `rollupOptions.input` and web/next.html). Shares the same state layer and
-// /api + /list routes as the main dashboard; express.static('public/app')
-// above already serves its built JS/CSS assets (public/app/assets/...).
+// The mobile-first layout (web/src/next/) is now the dashboard at `/`. The
+// previous split-view Preact dashboard stays available at /classic (a second
+// Vite page -- see web/vite.config.js's multi-page `rollupOptions.input` and
+// web/classic.html); express.static('public/app') above serves its assets.
+// /next was the preview URL, kept as a redirect so bookmarks still work.
+app.get('/classic', function(req, res) {
+    res.sendFile(path.join(__dirname, '..', 'public', 'app', 'classic.html'));
+});
 app.get('/next', function(req, res) {
-    res.sendFile(path.join(__dirname, '..', 'public', 'app', 'next.html'));
+    res.redirect(302, '/');
 });
 
 // Serves the new Preact/Vite dashboard at /v2 (built by `web/` into

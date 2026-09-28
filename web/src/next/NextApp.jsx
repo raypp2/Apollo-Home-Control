@@ -1,7 +1,6 @@
-// Apollo "next" preview layout -- mobile-first second page (see
-// web/next.html, served at /next by src/webServer.js), sharing the existing
-// state layer + commands module with the classic dashboard (main.jsx). Not a
-// replacement for `/` -- a parallel layout built for phone-first use:
+// Apollo mobile-first dashboard (web/index.html, served at `/`), sharing the
+// existing state layer + commands module with the classic split-view
+// dashboard (main.jsx, kept at /classic). Built for phone-first use:
 // wordmark+status button / scene bar / small floorplan / tab bar (Lights,
 // Shades, Media, Climate) / pinned Dock, with a slim problem banner above
 // the Dock instead of main.jsx's always-visible StatusStrip.

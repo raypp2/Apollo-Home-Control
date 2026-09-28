@@ -26,7 +26,9 @@ Single-owner, single-install. Deployed by rsync to Raspberry Pi 5.
 
 ## Dashboard (`web/`, Stage 11 — live)
 
-The primary UI is a **Preact + Vite** app in `web/` (isolated `web/package.json`; deps preact, mqtt, @preact/signals). It builds to `public/app/` (base `/`) and is served at `/`; the old AngularJS UI is kept at `/legacy`.
+The primary UI is a **Preact + Vite** app in `web/` (isolated `web/package.json`; deps preact, mqtt, @preact/signals). It builds to `public/app/` (base `/`) as two pages: the **mobile-first dashboard** (`web/index.html` → `web/src/next/`) served at `/`, and the earlier split-view dashboard (`web/classic.html` → `web/src/main.jsx`) served at `/classic`. `/next` (the old preview URL) redirects to `/`; the old AngularJS UI is kept at `/legacy`.
+
+- **Mobile-first layout** (`web/src/next/`): header (APOLLO + status dot → System Status), scene row, compact floorplan, Lights/Shades/Media/Climate tabs (two-column light tiles; tap toggles, press-hold-then-slide dims, hold-release or › opens a detail sheet), and a pinned Dock: receiver = source picker when off / volume when on, AC = on-button when off / setpoint stepper when on. Power lives in the tabs; the status strip only appears as a banner on problems.
 
 - **State layer** (`web/src/state/`): `bootstrap.js` hydrates from `/api/health` + `/list/*`; `mqtt.js` connects `ws://<host>:9001` for live state (polling fallback); `store.js` is a `@preact/signals` store keyed by MQTT `stateTopic`; `commands.js` is the dispatch + view-model layer; `optimistic.js` handles optimistic updates.
 - **Surfaces**: `plan/` (isometric floorplan from `rooms.json`), `panel/` (room command panel + Accent/DMX drill-in), `av/` + `climate/` (pinned bottom cluster + drill-ins), `scenes/` (tiered scene bar, More menu, room toggle), `status/` (system status screen).
