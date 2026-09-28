@@ -107,6 +107,7 @@ class DeviceConnection {
         backoffMaxMs = DEFAULT_BACKOFF_MAX_MS,
         keepAliveMs = DEFAULT_KEEPALIVE_MS,
         terminator = DEFAULT_TERMINATOR,
+        ignoreFrames = null,
     }) {
         this.host = host;
         this.port = port;
@@ -120,6 +121,12 @@ class DeviceConnection {
         this.backoffMaxMs = backoffMaxMs;
         this.keepAliveMs = keepAliveMs;
         this.terminator = terminator;
+        // Optional RegExp for framed tokens that are never a command's
+        // response and must be skipped while matching one. A PJLink
+        // projector sends a `PJLINK 0` greeting on every new connection, and
+        // it lands AFTER the first command was written (verified live), so
+        // without this the greeting was taken as that command's reply.
+        this.ignoreFrames = ignoreFrames;
 
         this.socket = null;
         this.status = 'offline'; // 'online' | 'offline' -- PUBLIC reachability status (see onStatusChange doc comment); only ever flips on a non-benign transition, decoupled from the private `_connected` bookkeeping flag below.
@@ -531,9 +538,15 @@ class DeviceConnection {
             if (item.expectResponse) {
                 this._activeDataHandler = (chunk) => {
                     buffer += chunk.toString();
-                    const idx = buffer.indexOf(this.terminator);
-                    if (idx !== -1) {
-                        finish(buffer.slice(0, idx));
+                    let idx;
+                    while ((idx = buffer.indexOf(this.terminator)) !== -1) {
+                        const frame = buffer.slice(0, idx);
+                        buffer = buffer.slice(idx + this.terminator.length);
+                        if (this.ignoreFrames && this.ignoreFrames.test(frame)) {
+                            continue;
+                        }
+                        finish(frame);
+                        return;
                     }
                 };
                 // Not unref'd -- this is the timer that bounds and resolves the

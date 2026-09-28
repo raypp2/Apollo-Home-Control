@@ -68,14 +68,22 @@ function waitUntil(conditionFn, { timeoutMs = 1000, intervalMs = 10 } = {}) {
  * fixture answer several independent single-field queries the way the real
  * receiver does when tcpServers.js's queryAnthemSpeakerExtras() sends them
  * one round trip at a time.
+ *
+ * PJLink behaviour (for `%1...` commands, like the real Epson projector):
+ * every non-query command is acknowledged `%1XXXX=OK\r`, or `=ERR3\r` for
+ * the first `busyAcks` power-on commands (projector cooling down); and with
+ * `greeting` set, each new connection is greeted with it shortly AFTER the
+ * client's first write arrives -- the ordering observed on the real device.
  */
-function startPowerAwareFixture(port, { queryCmd, onCmd, offCmd, onResponse, offResponse, initialState = 'off', wireTerminator = '\r', extraResponses = {} }) {
+function startPowerAwareFixture(port, { queryCmd, onCmd, offCmd, onResponse, offResponse, initialState = 'off', wireTerminator = '\r', extraResponses = {}, greeting = null, busyAcks = 0 }) {
     let state = initialState;
+    let busyLeft = busyAcks;
     const received = [];
     return new Promise((resolve) => {
         server = net.createServer((socket) => {
             socket.on('error', () => {});
             let buffer = '';
+            let greeted = !greeting;
             socket.on('data', (data) => {
                 buffer += data.toString();
                 let idx;
@@ -83,12 +91,30 @@ function startPowerAwareFixture(port, { queryCmd, onCmd, offCmd, onResponse, off
                     const cmd = buffer.slice(0, idx + wireTerminator.length);
                     buffer = buffer.slice(idx + wireTerminator.length);
                     received.push(cmd);
+                    if (!greeted) {
+                        greeted = true;
+                        socket.write(greeting);
+                    }
+                    const pjlinkAck = (ok) => {
+                        if (cmd.startsWith('%1')) {
+                            socket.write(`${cmd.slice(0, 6)}=${ok ? 'OK' : 'ERR3'}\r`);
+                        }
+                    };
                     if (cmd === queryCmd) {
                         socket.write(state === 'on' ? onResponse : offResponse);
                     } else if (cmd === onCmd) {
-                        state = 'on';
+                        if (busyLeft > 0) {
+                            busyLeft -= 1;
+                            pjlinkAck(false);
+                        } else {
+                            state = 'on';
+                            pjlinkAck(true);
+                        }
                     } else if (cmd === offCmd) {
                         state = 'off';
+                        pjlinkAck(true);
+                    } else if (cmd.startsWith('%1')) {
+                        pjlinkAck(true);
                     } else if (Object.prototype.hasOwnProperty.call(extraResponses, cmd)) {
                         socket.write(extraResponses[cmd]);
                     }
@@ -596,4 +622,86 @@ test('ITACH_PERSISTENT_CONNECTIONS=false routes to the legacy per-command implem
 
 test('DRY_RUN is unset in the unit-test run (only test/smoke.js sets it for its spawned child)', () => {
     assert.notStrictEqual(process.env.APOLLO_DRY_RUN, '1');
+});
+
+// --- PJLink: greeting framing, acknowledgements, busy retry ---
+
+function pjlinkDevice(port) {
+    return {
+        id: 'theaterProjector',
+        type: 'ip_control',
+        address: '127.0.0.1',
+        port,
+        commands: { on: '%1POWR 1\r', off: '%1POWR 0\r' },
+        power_commands: {
+            power_query: '%1POWR ?\r',
+            power_response_on: '%1POWR=1\r',
+            power_response_off: '%1POWR=0\r',
+        },
+    };
+}
+
+const PJLINK_FIXTURE = {
+    queryCmd: '%1POWR ?\r',
+    onCmd: '%1POWR 1\r',
+    offCmd: '%1POWR 0\r',
+    onResponse: '%1POWR=1\r',
+    offResponse: '%1POWR=0\r',
+    greeting: 'PJLINK 0\r',
+};
+
+test('isPjlink recognizes the projector config and not the Anthem', () => {
+    assert.strictEqual(tcpServers.isPjlink(pjlinkDevice(4352)), true);
+    assert.strictEqual(tcpServers.isPjlink({ power_commands: { power_query: 'Z1POW?;' } }), false);
+    assert.strictEqual(tcpServers.isPjlink({}), false);
+});
+
+test('PJLink greeting arriving after the first write is not taken as the power-query reply', async () => {
+    delete process.env.ITACH_PERSISTENT_CONNECTIONS;
+    const { received, getState, port } = await startPowerAwareFixture(0, { ...PJLINK_FIXTURE, initialState: 'off' });
+    const device = pjlinkDevice(port);
+    mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
+
+    // With the greeting mistaken for the reply, the power check read neither
+    // ON nor OFF and aborted without sending anything.
+    await tcpServers.send_ip_command(1, device, '%1INPT 31\r', true);
+
+    assert.deepStrictEqual(received, ['%1POWR ?\r', '%1POWR 1\r', '%1INPT 31\r']);
+    assert.strictEqual(getState(), 'on');
+    assert.ok(published.some((p) => p.payload.power === 'ON'));
+});
+
+test('PJLink power-on retries while the projector answers ERR3 (cooling down)', async () => {
+    delete process.env.ITACH_PERSISTENT_CONNECTIONS;
+    tcpServers._setPjlinkBusyRetry(20, 5);
+    try {
+        const { received, getState, port } = await startPowerAwareFixture(0, { ...PJLINK_FIXTURE, initialState: 'off', busyAcks: 2 });
+        const device = pjlinkDevice(port);
+        mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
+
+        // The device-scene path: a plain send with no power check.
+        await tcpServers.send_ip_command(1, device, device.commands.on, false);
+
+        assert.deepStrictEqual(received, ['%1POWR 1\r', '%1POWR 1\r', '%1POWR 1\r']);
+        assert.strictEqual(getState(), 'on');
+    } finally {
+        tcpServers._setPjlinkBusyRetry(10000, 12);
+    }
+});
+
+test('PJLink ERR3 retries stop at the configured limit', async () => {
+    delete process.env.ITACH_PERSISTENT_CONNECTIONS;
+    tcpServers._setPjlinkBusyRetry(10, 2);
+    try {
+        const { received, getState, port } = await startPowerAwareFixture(0, { ...PJLINK_FIXTURE, initialState: 'off', busyAcks: 10 });
+        const device = pjlinkDevice(port);
+        mqttTopics._init({ lights: [], devices: [device], publish: fakePublish });
+
+        await tcpServers.send_ip_command(1, device, device.commands.on, false);
+
+        assert.strictEqual(received.length, 3); // first try + 2 retries
+        assert.strictEqual(getState(), 'off');
+    } finally {
+        tcpServers._setPjlinkBusyRetry(10000, 12);
+    }
 });

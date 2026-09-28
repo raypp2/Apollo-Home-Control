@@ -94,6 +94,25 @@ const POWER_POLL_INTERVAL_MS = 60000;      // how often each device's power stat
 const POWER_POLL_FAST_INTERVAL_MS = 10000; // faster fallback poll for speaker (Anthem) devices while believed powered ON
 const POWER_POLL_STAGGER_MS = 5000;        // spread each device's poll start so they don't all fire at once
 
+// --- PJLink (theaterProjector) ----------------------------------------------
+// A PJLink projector greets every new connection with `PJLINK 0` (or
+// `PJLINK 1 <seed>` with auth), and acknowledges every command, e.g.
+// `%1POWR=OK`, or `%1POWR=ERR3` when it can't act right now (warming up or
+// cooling down). The greeting arrives after our first write, so it's skipped
+// when matching responses; the acknowledgement is always read and logged, and
+// ERR3 is retried until the projector is ready.
+const PJLINK_GREETING = /^PJLINK [01]\b/;
+const PJLINK_ACK_TIMEOUT_MS = 5000;
+const PJLINK_ERRORS = {
+	ERR1: 'undefined command',
+	ERR2: 'out-of-range parameter',
+	ERR3: 'unavailable right now (warming up or cooling down)',
+	ERR4: 'projector failure (check lamp/fan/cover)',
+	ERRA: 'authentication required',
+};
+let pjlinkBusyRetryMs = 10000; // ERR3 retry spacing; overridable for tests
+let pjlinkBusyMaxRetries = 12; // ~2 minutes, longer than an Epson cool-down
+
 // Devices with a command currently in flight (address:port -> true), so the
 // periodic poller can skip a cycle rather than race a real command's own
 // power-check state machine.
@@ -113,6 +132,66 @@ const lastKnownPower = new Map();
  */
 function persistentConnectionsEnabled() {
 	return process.env.ITACH_PERSISTENT_CONNECTIONS !== 'false';
+}
+
+/**
+ * Whether a device speaks PJLink, judged from its own command strings (every
+ * PJLink command starts `%1`/`%2` plus a four-letter command name), so no
+ * extra config flag is needed.
+ * @param {object} device_info
+ * @returns {boolean}
+ */
+function isPjlink(device_info) {
+	const pc = (device_info && device_info.power_commands) || {};
+	const cmds = (device_info && device_info.commands) || {};
+	const sample = String(pc.power_query || cmds.on || '');
+	return /^%[12][A-Z0-9]{4}[ ?]/.test(sample);
+}
+
+/**
+ * Connection options shared by the command path and the power poller (the
+ * first caller for a host:port creates the connection, so both must agree).
+ * @param {object} device_info
+ */
+function connectionOptsFor(device_info) {
+	return {
+		name: `${device_info.address}:${device_info.port}`,
+		terminator: deriveTerminator(device_info),
+		ignoreFrames: isPjlink(device_info) ? PJLINK_GREETING : null,
+	};
+}
+
+/**
+ * Sends one PJLink command and reads its acknowledgement, retrying while the
+ * projector answers ERR3 (busy warming up / cooling down) -- e.g. a scene that
+ * powers the projector back on shortly after it was switched off. Logs every
+ * reply so a refused command is visible in apollo.log instead of silent.
+ * @param {import('./deviceConnection').DeviceConnection} conn
+ * @param {number} debug_id
+ * @param {string} cmd - full command incl. `\r`
+ * @returns {Promise<string|null>} the final reply, or null if none arrived
+ */
+async function sendPjlinkCommand(conn, debug_id, cmd) {
+	for (let attempt = 0; ; attempt++) {
+		console.log('%d - Sent command: %s', debug_id, cmd);
+		const reply = await conn.send(cmd, { expectResponse: true, timeoutMs: PJLINK_ACK_TIMEOUT_MS });
+		if (reply === null) {
+			console.log('%d - No reply from projector (unreachable, or it dropped the command)', debug_id);
+			return null;
+		}
+		const err = (reply.match(/=(ERR[1-4A])$/) || [])[1];
+		if (!err) {
+			console.log('%d - Received: %s', debug_id, reply);
+			return reply;
+		}
+		if (err === 'ERR3' && attempt < pjlinkBusyMaxRetries) {
+			console.log('%d - Projector replied %s: %s -- retrying in %ds', debug_id, reply, PJLINK_ERRORS[err], pjlinkBusyRetryMs / 1000);
+			await wait(pjlinkBusyRetryMs);
+			continue;
+		}
+		console.log('%d - ERROR: projector replied %s: %s', debug_id, reply, PJLINK_ERRORS[err]);
+		return reply;
+	}
 }
 
 function inFlightKey(device_info) {
@@ -371,8 +450,16 @@ function registerUnsolicitedHandler(conn, device_info) {
  * @param {number} debug_id
  * @param {string} device_cmd
  */
-async function sendAllIpCommands(conn, debug_id, device_cmd) {
+async function sendAllIpCommands(conn, debug_id, device_cmd, device_info) {
 	const parts = device_cmd.split('~');
+	if (isPjlink(device_info)) {
+		// One at a time, each waiting for its acknowledgement (which also
+		// paces them -- the projector answers each before the next goes out).
+		for (const part of parts) {
+			await sendPjlinkCommand(conn, debug_id, part);
+		}
+		return;
+	}
 	// Enqueue every part in the SAME synchronous pass (no await between
 	// conn.send() calls) so DeviceConnection sees them as a batch already
 	// queued together and applies its own inter-command spacing between them
@@ -408,10 +495,7 @@ async function send_ip_command(debug_id, device_info, device_cmd, check_for_powe
 
 	markInFlight(device_info);
 	try {
-		const conn = getConnection(device_info.address, device_info.port, {
-			name: `${device_info.address}:${device_info.port}`,
-			terminator: deriveTerminator(device_info),
-		});
+		const conn = getConnection(device_info.address, device_info.port, connectionOptsFor(device_info));
 		registerStatusPublisher(conn, device_info);
 		registerUnsolicitedHandler(conn, device_info);
 
@@ -457,10 +541,14 @@ async function send_ip_command(debug_id, device_info, device_cmd, check_for_powe
 				if (device_cmd === "OFF") {
 					console.log("%d - Disregarding 'off' command", debug_id);
 				} else {
-					await conn.send(device_on, { expectResponse: false });
+					if (isPjlink(device_info)) {
+						await sendPjlinkCommand(conn, debug_id, device_on);
+					} else {
+						await conn.send(device_on, { expectResponse: false });
+					}
 					resultingPowerState = 'ON';
 					await wait(power_on_delay);
-					await sendAllIpCommands(conn, debug_id, device_cmd);
+					await sendAllIpCommands(conn, debug_id, device_cmd, device_info);
 				}
 			} else if (powerState === 'ON') {
 				console.log("%d - Device is on", debug_id);
@@ -469,7 +557,7 @@ async function send_ip_command(debug_id, device_info, device_cmd, check_for_powe
 					console.log("%d - Disregarding 'on' command", debug_id);
 				} else {
 					await wait(off_delay);
-					await sendAllIpCommands(conn, debug_id, device_cmd);
+					await sendAllIpCommands(conn, debug_id, device_cmd, device_info);
 				}
 			} else {
 				console.log("%d - Response to power query not valid", debug_id);
@@ -482,7 +570,7 @@ async function send_ip_command(debug_id, device_info, device_cmd, check_for_powe
 				mqttTopics.publishState(device_info, { power: resultingPowerState, ...extras }, 'command');
 			}
 		} else {
-			await sendAllIpCommands(conn, debug_id, device_cmd);
+			await sendAllIpCommands(conn, debug_id, device_cmd, device_info);
 		}
 	} finally {
 		clearInFlight(device_info);
@@ -515,10 +603,7 @@ async function pollDevicePower(device) {
 	}
 
 	try {
-		const conn = getConnection(device.address, device.port, {
-			name: `${device.address}:${device.port}`,
-			terminator: deriveTerminator(device),
-		});
+		const conn = getConnection(device.address, device.port, connectionOptsFor(device));
 		registerStatusPublisher(conn, device);
 		registerUnsolicitedHandler(conn, device);
 		const response = await conn.send(device.power_commands.power_query, { expectResponse: true });
@@ -704,9 +789,11 @@ module.exports = {
     parseAnthemSpeakerState,
     queryAnthemSpeakerExtras,
     deriveTerminator,
+    isPjlink,
     registerUnsolicitedHandler,
     recordLastPower,
     pollIntervalFor,
     _legacy_send_ip_command,
     _persistentConnectionsEnabled: persistentConnectionsEnabled,
+    _setPjlinkBusyRetry(ms, maxRetries) { pjlinkBusyRetryMs = ms; pjlinkBusyMaxRetries = maxRetries; },
 };
