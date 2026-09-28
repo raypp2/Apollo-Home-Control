@@ -1,0 +1,14 @@
+[Unit]
+Description=Sample Pi thermal/throttle state every minute
+
+[Timer]
+# Start sampling soon after boot -- the minutes right after a power-cycle are
+# exactly when a cooling fault shows itself.
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+# No Persistent=true: a missed sample from a window when the Pi was off is not
+# something we want replayed on boot, it would just write a misleading row.
+
+[Install]
+WantedBy=timers.target

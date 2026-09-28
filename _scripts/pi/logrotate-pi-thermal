@@ -1,0 +1,12 @@
+/var/log/pi-thermal/thermal.csv {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    # copytruncate: the writer is a short-lived script that appends and exits,
+    # so there is no daemon to signal for a reopen. pi-thermal-log.sh re-adds
+    # the CSV header when it finds the file empty after truncation.
+    copytruncate
+}

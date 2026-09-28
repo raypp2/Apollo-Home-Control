@@ -1,0 +1,9 @@
+[Unit]
+Description=Sample Pi thermal/throttle state to CSV
+Documentation=https://github.com/raypp2/Apollo-Home-Control
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pi-thermal-log.sh
+Nice=19
+IOSchedulingClass=idle
