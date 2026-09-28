@@ -45,3 +45,6 @@ _OLD/*
 # not hand-edited config, lives on the Pi across deploys (see
 # private/update-pi.sh's EXCLUDE_PATTERNS)
 /data/
+
+# Timestamped .env backups hold live credentials
+.env.bak*
