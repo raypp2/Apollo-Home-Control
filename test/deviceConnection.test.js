@@ -267,6 +267,76 @@ test('benign idle close (queue empty, nothing in-flight): no offline emitted; ne
     );
 });
 
+test('repeated benign idle closes do not spam the log with connected/closed pairs', async () => {
+    // Regression: the PJLink theater projector drops its idle socket every
+    // ~30s, so Apollo's log filled with an endless "connection closed" /
+    // "connected" ladder. _logBenignClose() was already written to coalesce
+    // that to one line an hour -- but the unconditional console.log() calls in
+    // the connect and 'close' handlers printed regardless, defeating it.
+    let acceptedConnections = 0;
+    const { server, port } = await startFixtureServer((socket) => {
+        acceptedConnections++;
+        // End every accepted socket shortly after connect, with nothing
+        // queued or in flight client-side -- the definition of a benign close.
+        setTimeout(() => socket.end(), 20);
+    });
+    void server;
+
+    const statuses = [];
+    const conn = trackConn(new DeviceConnection({ host: '127.0.0.1', port, backoffInitialMs: 15, backoffMaxMs: 40 }));
+    conn.onStatusChange((s) => statuses.push(s)); // justifies the proactive reconnect, as in production
+
+    const logs = [];
+    const originalLog = console.log;
+    console.log = (...args) => logs.push(args.map(String).join(' '));
+    try {
+        await conn.send('CMD', { expectResponse: false });
+        await waitUntil(() => acceptedConnections >= 4, { timeoutMs: 4000 });
+    } finally {
+        console.log = originalLog;
+    }
+
+    // ': connection closed' matches only the per-close spam line, not the
+    // coalesced ': idle connection closed by peer' summary we do want.
+    const closedLines = logs.filter((l) => l.includes(': connection closed'));
+    const connectedLines = logs.filter((l) => l.includes(': connected'));
+    const benignLines = logs.filter((l) => l.includes('idle connection closed by peer'));
+
+    assert.strictEqual(closedLines.length, 0, `benign closes must not log "connection closed", got ${JSON.stringify(closedLines)}`);
+    assert.ok(connectedLines.length <= 1, `expected at most one "connected" line across ${acceptedConnections} reconnects, got ${JSON.stringify(connectedLines)}`);
+    assert.ok(benignLines.length <= 1, `benign close logging must stay coalesced, got ${JSON.stringify(benignLines)}`);
+    assert.ok(!statuses.includes('offline'), `benign churn must not flap reachability, got ${JSON.stringify(statuses)}`);
+});
+
+test('a non-benign close still logs "connection closed" (the quieting is benign-only)', async () => {
+    // Guards against the fix above over-reaching into silence: a close that
+    // strands an in-flight command is a real reachability event and must stay
+    // visible in the log.
+    const { server, port } = await startFixtureServer((socket) => {
+        socket.on('data', () => socket.end()); // FIN, never responds -> clean close, no ECONNRESET
+    });
+    void server;
+
+    const statuses = [];
+    const conn = trackConn(new DeviceConnection({ host: '127.0.0.1', port, backoffInitialMs: 5000, backoffMaxMs: 5000 }));
+    conn.onStatusChange((s) => statuses.push(s));
+
+    const logs = [];
+    const originalLog = console.log;
+    console.log = (...args) => logs.push(args.map(String).join(' '));
+    try {
+        await conn.send('CMD', { expectResponse: true, timeoutMs: 1500 });
+    } finally {
+        console.log = originalLog;
+    }
+
+    assert.ok(
+        logs.some((l) => l.includes('connection closed')),
+        `expected a "connection closed" line for a close with work in flight, got ${JSON.stringify(logs)}`
+    );
+    assert.ok(statuses.includes('offline'), `expected an offline emission, got ${JSON.stringify(statuses)}`);
+});
+
 test('close while a command is in-flight (awaiting a response): offline IS emitted', async () => {
     // The server accepts, then destroys the socket the moment it sees data
     // -- never responds -- so the client's expectResponse:true send is still

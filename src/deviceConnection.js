@@ -306,6 +306,11 @@ class DeviceConnection {
         // (never connected; always non-benign, see onDown()) from a close of
         // an already-established connection (which may be benign).
         let connectedSuccessfully = false;
+        // Node emits 'error' AND then 'close' for the same failure. Without this
+        // latch onDown() ran twice: the second pass saw _activeFinish already
+        // nulled and the queue drained, so it misread a real error as a benign
+        // close and bumped _benignCloseCount for an event that was anything but.
+        let downHandled = false;
 
         // Not unref'd: a caller may be actively awaiting a command over this
         // connection, and a hung connect needs to reliably time out and resolve
@@ -328,7 +333,14 @@ class DeviceConnection {
             connectedSuccessfully = true;
             this._connected = true;
             this.backoffMs = this.backoffInitialMs;
-            console.log('DeviceConnection %s: connected', this.name);
+            // Only announce a connect that is an actual reachability transition.
+            // A benign idle close leaves the public status at 'online', so the
+            // routine reconnect churn of a peer that drops idle sockets (a
+            // PJLink projector, ~30s) stays silent here -- same intent as
+            // _logBenignClose(), which those unconditional logs used to defeat.
+            if (this.status !== 'online') {
+                console.log('DeviceConnection %s: connected', this.name);
+            }
             this._setStatus('online');
             // Always wake the pump loop on a real connect, independent of
             // whether _setStatus() actually emitted (it won't, if status was
@@ -340,7 +352,11 @@ class DeviceConnection {
 
         socket.on('data', (data) => this._onData(data));
 
-        const onDown = () => {
+        const onDown = (alreadyLogged = false) => {
+            if (downHandled) {
+                return;
+            }
+            downHandled = true;
             clearTimeout(connectTimer);
             this.connecting = false;
             if (this.socket === socket) {
@@ -360,6 +376,11 @@ class DeviceConnection {
             if (benign) {
                 this._logBenignClose();
             } else {
+                // The 'error' handler has already printed the reason; don't
+                // follow it with a redundant, less informative close line.
+                if (!alreadyLogged) {
+                    console.log('DeviceConnection %s: connection closed', this.name);
+                }
                 this._setStatus('offline');
             }
 
@@ -374,12 +395,13 @@ class DeviceConnection {
 
         socket.on('error', (err) => {
             console.log('DeviceConnection %s: %s', this.name, err.message);
-            onDown();
+            onDown(true);
         });
 
         socket.on('close', () => {
-            console.log('DeviceConnection %s: connection closed', this.name);
-            onDown();
+            // Deliberately silent here: onDown() decides whether this close is
+            // benign (quiet, hourly-coalesced) or a real transition (logged).
+            onDown(false);
         });
     }
 
