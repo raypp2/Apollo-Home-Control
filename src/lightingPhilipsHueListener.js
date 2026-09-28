@@ -190,6 +190,51 @@ function _xyToHex(x, y, brightness) {
 }
 
 /**
+ * Converts a Hue color-temperature value (in mireds/mirek) to an approximate
+ * '#rrggbb' white-point hex (lowercase). Used when a group is in
+ * color-temperature mode -- in that mode the bridge leaves the resource's
+ * `color.xy` at whatever color was set LAST (it doesn't zero it), so
+ * converting xy would paint the dashboard swatch with a stale color (e.g. a
+ * blue left over from an earlier COLOR command) while the bulb is actually
+ * glowing white. Deriving the swatch from the CT instead keeps it a plausible
+ * warm/cool white. Mirek -> Kelvin is `1e6 / mirek`; Kelvin -> RGB uses the
+ * standard Tanner Helland approximation, adequate for a swatch.
+ * @param {number} mirek - Hue CT in mireds (~153 cool .. ~500 warm)
+ * @returns {string|null} '#rrggbb', or null if mirek isn't a usable number
+ */
+function _ctToHex(mirek) {
+    if (typeof mirek !== 'number' || !isFinite(mirek) || mirek <= 0) {
+        return null;
+    }
+    // Clamp Kelvin to the range the approximation is defined over.
+    const kelvin = Math.min(40000, Math.max(1000, 1e6 / mirek));
+    const temp = kelvin / 100;
+
+    let r;
+    let g;
+    let b;
+
+    if (temp <= 66) {
+        r = 255;
+        g = 99.4708025861 * Math.log(temp) - 161.1195681661;
+    } else {
+        r = 329.698727446 * Math.pow(temp - 60, -0.1332047592);
+        g = 288.1221695283 * Math.pow(temp - 60, -0.0755148492);
+    }
+
+    if (temp >= 66) {
+        b = 255;
+    } else if (temp <= 19) {
+        b = 0;
+    } else {
+        b = 138.5177312231 * Math.log(temp - 10) - 305.0447927307;
+    }
+
+    const clamp = (c) => Math.min(255, Math.max(0, Math.round(c)));
+    return '#' + [clamp(r), clamp(g), clamp(b)].map((c) => c.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * Parses a CLIP v2 `id_v1` field ("/groups/5") into the legacy group number
  * ("5", a string, matching lights.json's `address` field type) or null if it
  * doesn't look like a group id_v1 at all.
@@ -458,7 +503,21 @@ function _handleResourceItem(item) {
     if (item.dimming && typeof item.dimming.brightness === 'number') {
         state.brightness = Math.round(item.dimming.brightness);
     }
-    if (item.color && item.color.xy && typeof item.color.xy.x === 'number' && typeof item.color.xy.y === 'number') {
+    // Color-temperature mode wins over xy: when the bridge marks the CT
+    // reading valid (`mirek_valid: true`) the bulb is glowing white via CT,
+    // and its `color.xy` is a stale leftover from the last COLOR command --
+    // converting that xy would show a phantom color (e.g. blue) on the
+    // dashboard while the light is actually white. See _ctToHex.
+    const ctActive = item.color_temperature
+        && item.color_temperature.mirek_valid === true
+        && typeof item.color_temperature.mirek === 'number';
+
+    if (ctActive) {
+        const hex = _ctToHex(item.color_temperature.mirek);
+        if (hex) {
+            state.color = hex;
+        }
+    } else if (item.color && item.color.xy && typeof item.color.xy.x === 'number' && typeof item.color.xy.y === 'number') {
         // Prefer this same event's brightness for the xy->RGB conversion;
         // fall back to the last known brightness on the entry, then to full
         // brightness if neither is known (xy alone doesn't carry luminance).
@@ -660,7 +719,16 @@ function _mapV1GroupState(group) {
         state.brightness = Math.round((group.action.bri / 254) * 100);
     }
 
-    if (group.action && Array.isArray(group.action.xy) && group.action.xy.length === 2) {
+    // Color-temperature mode wins over xy (same reasoning as the SSE path):
+    // in `ct` colormode the group's `action.xy` is a stale leftover, so the
+    // swatch is derived from `action.ct` (mireds) instead. v1 states the
+    // active mode explicitly via `action.colormode` ("ct" | "hs" | "xy").
+    if (group.action && group.action.colormode === 'ct' && typeof group.action.ct === 'number') {
+        const hex = _ctToHex(group.action.ct);
+        if (hex) {
+            state.color = hex;
+        }
+    } else if (group.action && Array.isArray(group.action.xy) && group.action.xy.length === 2) {
         const briFraction = typeof state.brightness === 'number' ? state.brightness / 100
             : typeof group.action.bri === 'number' ? group.action.bri / 254
                 : 1;
@@ -815,5 +883,6 @@ module.exports = {
     _buildCombinedFixtureMap,
     _mapV1GroupState,
     _xyToHex,
+    _ctToHex,
     _resetForTesting,
 };

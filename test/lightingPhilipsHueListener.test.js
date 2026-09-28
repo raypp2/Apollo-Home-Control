@@ -294,6 +294,59 @@ test('color_temperature alone is stashed but not published (still out of scope)'
     assert.strictEqual('color' in published[0].payload, false);
 });
 
+test('active color_temperature (mirek_valid) publishes a white-ish color, ignoring stale xy', () => {
+    // Bulb glowing white via CT, but its resource still carries the blue xy
+    // from the last COLOR command -- the swatch must reflect the white CT,
+    // not the phantom blue. This is the reported bug.
+    listener._handleResourceItem({
+        id: BEDROOM_COLOR_UUID,
+        type: 'grouped_light',
+        on: { on: true },
+        color: { xy: { x: 0.15, y: 0.06 } }, // deep blue -- would map to a blue hex via xy
+        color_temperature: { mirek: 300, mirek_valid: true },
+    });
+
+    const last = published[published.length - 1];
+    assert.strictEqual(last.payload.power, 'ON');
+    assert.match(last.payload.color, /^#[0-9a-f]{6}$/);
+    // A ~3300K white: red-dominant, blue the smallest channel -- NOT a blue.
+    const r = parseInt(last.payload.color.slice(1, 3), 16);
+    const b = parseInt(last.payload.color.slice(5, 7), 16);
+    assert.ok(r > b, `expected a warm white (r>b), got ${last.payload.color}`);
+});
+
+test('color_temperature without mirek_valid is NOT treated as active; xy still wins', () => {
+    // A stale/invalid CT reading must not override an actual color-mode xy.
+    listener._handleResourceItem({
+        id: BEDROOM_COLOR_UUID,
+        type: 'grouped_light',
+        color: { xy: { x: 0.6, y: 0.35 } },
+        color_temperature: { mirek: 300, mirek_valid: false },
+    });
+
+    const last = published[published.length - 1];
+    assert.match(last.payload.color, /^#[0-9a-f]{6}$/);
+    // xy (0.6, 0.35) is red-dominant, distinct from a CT white; just confirm
+    // it converted via the xy path (a value _ctToHex(300) would not produce).
+    assert.strictEqual(last.payload.color, listener._xyToHex(0.6, 0.35, 1));
+});
+
+test('_ctToHex converts a mirek value to a plausible white hex; warm < cool in blue', () => {
+    const warm = listener._ctToHex(454); // ~2200K
+    const cool = listener._ctToHex(153); // ~6500K
+    assert.match(warm, /^#[0-9a-f]{6}$/);
+    assert.match(cool, /^#[0-9a-f]{6}$/);
+    const warmB = parseInt(warm.slice(5, 7), 16);
+    const coolB = parseInt(cool.slice(5, 7), 16);
+    assert.ok(coolB > warmB, `cool white should have more blue than warm (${cool} vs ${warm})`);
+});
+
+test('_ctToHex returns null for non-numeric or non-positive input', () => {
+    assert.strictEqual(listener._ctToHex(undefined), null);
+    assert.strictEqual(listener._ctToHex(0), null);
+    assert.strictEqual(listener._ctToHex(-5), null);
+});
+
 test('_xyToHex converts a known xy+brightness point to a plausible hex string', () => {
     const hex = listener._xyToHex(0.3, 0.3, 1);
     assert.match(hex, /^#[0-9a-f]{6}$/);
@@ -341,4 +394,22 @@ test('_mapV1GroupState: action.xy is converted to a #rrggbb hex color field', ()
     assert.strictEqual(state.power, 'ON');
     assert.strictEqual(state.brightness, 100);
     assert.match(state.color, /^#[0-9a-f]{6}$/);
+});
+
+test('_mapV1GroupState: colormode "ct" derives the swatch from action.ct, not stale xy', () => {
+    // colormode ct + a leftover blue-ish xy: the swatch must come from ct.
+    const state = listener._mapV1GroupState({
+        action: { on: true, bri: 254, colormode: 'ct', ct: 300, xy: [0.15, 0.06] },
+    });
+    assert.strictEqual(state.color, listener._ctToHex(300));
+    const r = parseInt(state.color.slice(1, 3), 16);
+    const b = parseInt(state.color.slice(5, 7), 16);
+    assert.ok(r > b, `expected a warm white (r>b), got ${state.color}`);
+});
+
+test('_mapV1GroupState: colormode "xy" uses xy even when a stale ct is present', () => {
+    const state = listener._mapV1GroupState({
+        action: { on: true, bri: 254, colormode: 'xy', ct: 300, xy: [0.6, 0.35] },
+    });
+    assert.strictEqual(state.color, listener._xyToHex(0.6, 0.35, 1));
 });
