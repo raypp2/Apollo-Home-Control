@@ -1,0 +1,467 @@
+/* Apollo "next" preview layout -- mobile-first second page (web/next.html,
+   served at /next). Phone-first vertical stack: header / scene row / small
+   floorplan / tab bar / scrolling tab content / pinned Dock, with a slim
+   problem banner above the Dock instead of the classic dashboard's always-on
+   StatusStrip. Desktop (>=900px) reflows to plane-left + fixed right rail,
+   header+scenes spanning the top -- see .next-main below.
+
+   Reuses tokens.css variables throughout (--bg-app, --accent, --amber,
+   --r-*) so this second page matches the classic dashboard's look. */
+
+.next-app {
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+  color: var(--text);
+  padding-top: env(safe-area-inset-top);
+}
+
+/* ---------- header ---------- */
+
+.next-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  height: 52px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.next-status-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 44px;
+  padding: 4px 8px 4px 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+}
+
+.next-wordmark {
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  font-size: 15px;
+}
+
+.next-conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* ---------- scene row ---------- */
+
+/* Stacking fix: the scene bar's More menu popover (position:fixed, see
+   scenes/MoreMenu.jsx) is positioned against the viewport so it isn't
+   clipped by any ancestor -- but the isometric plane below it still paints
+   on top in some browsers without an explicit stacking order between
+   siblings. Giving the scene row its own stacking context above the plane's
+   (z-index:0; isolation:isolate below) settles that regardless of paint
+   order. */
+.next-scene-row {
+  flex: none;
+  position: relative;
+  z-index: 10;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* Right-edge fade mask on the scrollable chip row, so a horizontally
+   overflowing scene bar hints at more content instead of hard-cutting. */
+.next-scene-row .scene-bar-scroll {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+}
+
+/* ---------- plane + right column ---------- */
+
+.next-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.next-plane-wrap {
+  flex: none;
+  height: clamp(170px, 26dvh, 260px);
+  position: relative;
+  overflow: hidden;
+  z-index: 0;
+  isolation: isolate;
+}
+
+.next-right-col {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- tab bar ---------- */
+
+.next-tabs {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  height: 40px;
+  margin: 10px 16px 8px;
+  padding: 3px;
+  border-radius: var(--r-pill, 999px);
+  background: rgba(234, 229, 239, 0.05);
+  border: 1px solid var(--hairline);
+}
+
+.next-tab-btn {
+  flex: 1;
+  border: none;
+  border-radius: var(--r-pill, 999px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.next-tab-btn.is-active {
+  background: var(--accent-fill, rgba(166, 136, 232, 0.16));
+  color: var(--text);
+}
+
+/* ---------- tab content ---------- */
+
+.next-tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 16px 16px;
+}
+
+.next-empty {
+  margin: 40px auto;
+  text-align: center;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+
+/* ---------- Lights tab: tile grid ---------- */
+
+.next-lights-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.next-member-section {
+  border-radius: var(--r-row, 11px);
+  transition: background-color 200ms ease;
+}
+
+.next-member-section.member-flash {
+  background-color: rgba(166, 136, 232, 0.12);
+}
+
+.next-member-heading {
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--text-tertiary);
+  margin: 0 0 8px 2px;
+}
+
+.next-tile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.next-tile {
+  position: relative;
+  height: 64px;
+}
+
+.next-tile-body {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--r-row, 11px);
+  border: 1px solid rgba(234, 229, 239, 0.11);
+  background: rgba(234, 229, 239, 0.03);
+  overflow: hidden;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  text-align: left;
+  cursor: pointer;
+  /* Long-press opens the sheet: stop iOS's text-select / callout menu and
+     the double-tap-zoom delay from competing with it. */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.next-tile.is-dimmed .next-tile-body {
+  opacity: 0.5;
+}
+
+.next-tile.is-pending .next-tile-body {
+  border-color: rgba(242, 166, 94, 0.55);
+}
+
+.next-tile-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(255, 178, 103, 0.2), rgba(255, 178, 103, 0.32));
+  border-top: 1px solid rgba(255, 178, 103, 0.4);
+  pointer-events: none;
+}
+
+.next-tile-name {
+  position: relative;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.next-tile-value {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.next-tile-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.next-tile-more {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+  min-width: 0;
+  border-radius: var(--r-btn, 9px);
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 15px;
+  cursor: pointer;
+  z-index: 1;
+}
+
+/* ---------- Shades tab ---------- */
+
+.next-shades-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* ---------- problem banner ---------- */
+
+.next-problem-banner {
+  flex: none;
+  margin: 0 16px 8px;
+  min-height: 40px;
+  border-radius: var(--r-row, 11px);
+  border: 1px solid rgba(242, 166, 94, 0.4);
+  background: rgba(242, 166, 94, 0.12);
+  color: var(--amber-text, #f2c79a);
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+  padding: 0 14px;
+}
+
+.next-dock-wrap {
+  flex: none;
+  /* Safe-area inset lives on the wrapper, not inside the 64px dock card, so
+     the home indicator doesn't squash the controls. */
+  padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+}
+
+/* ---------- Tile sheet (bottom sheet) ---------- */
+
+.tile-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(10, 8, 14, 0.55);
+  display: flex;
+  align-items: flex-end;
+}
+
+.tile-sheet {
+  width: 100%;
+  max-height: 60dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-drill, #16131c);
+  border-radius: var(--r-sheet, 18px) var(--r-sheet, 18px) 0 0;
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.45);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tile-sheet-handle-row {
+  flex: none;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.tile-sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(234, 229, 239, 0.22);
+}
+
+.tile-sheet-close {
+  position: absolute;
+  right: 10px;
+  top: 4px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(234, 229, 239, 0.06);
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tile-sheet-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 20px 24px;
+}
+
+.tile-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tile-sheet-title {
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.tile-sheet-power {
+  align-self: flex-start;
+  min-width: 88px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: var(--r-pill, 999px);
+  border: 1px solid rgba(234, 229, 239, 0.15);
+  background: rgba(234, 229, 239, 0.05);
+  color: var(--text);
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tile-sheet-power.is-on {
+  border-color: var(--amber);
+  background: rgba(242, 166, 94, 0.16);
+  color: var(--amber-text, #f2c79a);
+}
+
+.tile-sheet-bar {
+  position: relative;
+  height: 52px;
+  border-radius: var(--r-row, 11px);
+  border: 1px solid rgba(234, 229, 239, 0.11);
+  background: rgba(234, 229, 239, 0.03);
+  overflow: hidden;
+  touch-action: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.tile-sheet-bar-fill {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: linear-gradient(90deg, rgba(242, 166, 94, 0.28), rgba(242, 166, 94, 0.14));
+  pointer-events: none;
+}
+
+.tile-sheet-bar-label {
+  position: relative;
+  margin-left: 16px;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.tile-sheet-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* AccentDrillIn renders via DrillInShell, whose header/body chrome is
+   `position:absolute; inset:0` -- it expects a positioned, sized ancestor to
+   fill (normally RoomPanel's own outer box). Give it one here. */
+.tile-sheet-accent {
+  position: relative;
+  min-height: 50dvh;
+}
+
+/* ---------- desktop (>=900px): plane-left + fixed right rail ---------- */
+
+@media (min-width: 900px) {
+  .next-main {
+    flex-direction: row;
+  }
+
+  .next-plane-wrap {
+    flex: 1;
+    height: 100%;
+  }
+
+  .next-right-col {
+    width: 440px;
+    flex: none;
+    border-left: 1px solid var(--hairline);
+  }
+}

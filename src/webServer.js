@@ -191,6 +191,15 @@ app.get('/legacy', function(req, res) {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
+// Serves the mobile-first "next" preview layout (a second Vite page built
+// alongside the main dashboard -- see web/vite.config.js's multi-page
+// `rollupOptions.input` and web/next.html). Shares the same state layer and
+// /api + /list routes as the main dashboard; express.static('public/app')
+// above already serves its built JS/CSS assets (public/app/assets/...).
+app.get('/next', function(req, res) {
+    res.sendFile(path.join(__dirname, '..', 'public', 'app', 'next.html'));
+});
+
 // Serves the new Preact/Vite dashboard at /v2 (built by `web/` into
 // public/app/, base '/v2/'). express.static handles the built JS/CSS/asset
 // requests; the SPA fallback below is GET-only and only fires for unmatched

@@ -1,0 +1,376 @@
+/* Apollo v2 dashboard -- mobile "next" layout: Dock (pinned bottom cluster)
+   + shared bits reused by MediaTab/ClimateTab. Plain CSS classes (rather than
+   inline styles) only where real CSS features are needed: safe-area padding,
+   a keyframe pulse, and the drag-track/backdrop layering. Everything else in
+   these components is inline style objects, matching the rest of web/src. */
+
+.next-dock {
+  display: flex;
+  align-items: stretch;
+  height: 64px;
+  margin: 0 16px;
+  padding: 8px 10px;
+  background: #1c1824;
+  border: 1px solid var(--hairline, rgba(234, 229, 239, 0.1));
+  border-radius: 14px;
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.3);
+  font-family: 'Outfit', system-ui, sans-serif;
+  color: var(--text, #eae5ef);
+  box-sizing: border-box;
+  position: relative;
+}
+
+.next-dock-slot {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.next-dock-slot--receiver {
+  flex: 1;
+  margin-right: 10px;
+}
+
+.next-dock-slot--ac {
+  width: 150px;
+  flex-shrink: 0;
+}
+
+.next-dock-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--hairline, rgba(234, 229, 239, 0.1));
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+/* --- "Choose source" button (receiver off) -------------------------------- */
+.next-dock-sources-btn {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--r-row, 11px);
+  border: 1px solid rgba(234, 229, 239, 0.15);
+  background: rgba(234, 229, 239, 0.05);
+  color: var(--text-secondary, rgba(234, 229, 239, 0.55));
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* --- volume bar (Dock + MediaTab, via VolumeControl.jsx) ------------------ */
+.next-volume-track {
+  position: relative;
+  width: 100%;
+  border-radius: var(--r-row, 11px);
+  border: 1px solid rgba(234, 229, 239, 0.15);
+  background: rgba(234, 229, 239, 0.05);
+  overflow: hidden;
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.next-volume-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--accent-fill, rgba(166, 136, 232, 0.32)), rgba(166, 136, 232, 0.14));
+  pointer-events: none;
+}
+
+.next-volume-labels {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  pointer-events: none;
+}
+
+.next-volume-source {
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--text-secondary, rgba(234, 229, 239, 0.55));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.next-volume-db {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text, #eae5ef);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+/* --- AC slot ---------------------------------------------------------------
+   OFF: one 44px+ button filling the slot. ON: [-][setpoint][+] row, 40x44
+   buttons either side of the number. */
+.next-dock-ac-btn {
+  width: 100%;
+  height: 100%;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: var(--r-row, 11px);
+  border: 1px solid rgba(234, 229, 239, 0.15);
+  background: rgba(234, 229, 239, 0.05);
+  color: var(--text-secondary, rgba(234, 229, 239, 0.55));
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.next-dock-ac-btn-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.next-dock-ac-btn-label {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.next-dock-ac-btn-setpoint {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-tertiary, rgba(234, 229, 239, 0.32));
+}
+
+.next-dock-ac-stepper {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.next-dock-ac-step-btn {
+  width: 40px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: var(--r-btn, 9px);
+  border: 1px solid rgba(234, 229, 239, 0.15);
+  background: rgba(234, 229, 239, 0.05);
+  color: var(--text, #eae5ef);
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.next-dock-ac-step-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.next-dock-ac-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.next-dock-ac-temp {
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.1;
+}
+
+.next-dock-ac-mode {
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ac-blue, rgba(120, 185, 255, 0.5));
+}
+
+/* Power "on" fill -- accent purple, shared by the AC dock button, AC/Media
+   power toggles, and active source tiles. */
+.next-on-accent {
+  border-color: var(--accent, #a688e8) !important;
+  background: var(--accent-fill, rgba(166, 136, 232, 0.16)) !important;
+  color: var(--accent, #a688e8) !important;
+}
+
+/* --- source picker popover (Dock, receiver off) --------------------------- */
+.next-source-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+
+.next-source-popover {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: var(--r-sheet, 18px);
+  border: 1px solid var(--hairline, rgba(234, 229, 239, 0.1));
+  background: #1c1824;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.next-source-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--r-row, 11px);
+  border: 1px solid rgba(234, 229, 239, 0.11);
+  background: rgba(234, 229, 239, 0.03);
+  color: var(--text, #eae5ef);
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.next-source-item.next-pending {
+  color: var(--text-secondary, rgba(234, 229, 239, 0.55));
+  animation: next-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes next-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* --- MediaTab source grid --------------------------------------------------*/
+.next-media-source-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.next-media-source-tile {
+  height: 64px;
+  border-radius: var(--r-row, 11px);
+  border: 1px solid rgba(234, 229, 239, 0.11);
+  background: rgba(234, 229, 239, 0.03);
+  color: var(--text, #eae5ef);
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 6px;
+}
+
+/* --- ClimateTab big stepper ------------------------------------------------*/
+.next-climate-step-btn-big {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: var(--r-btn, 9px);
+  border: 1px solid rgba(234, 229, 239, 0.15);
+  background: rgba(234, 229, 239, 0.05);
+  color: var(--text, #eae5ef);
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.next-climate-step-btn-big:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.next-climate-temp-big {
+  font-weight: 600;
+  font-size: 52px;
+  min-width: 120px;
+  text-align: center;
+}
+
+/* --- generic segmented control (mode/fan) ---------------------------------*/
+.next-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.next-segmented-btn {
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: var(--r-pill, 999px);
+  border: 1px solid rgba(234, 229, 239, 0.15);
+  background: rgba(234, 229, 239, 0.05);
+  color: var(--text-secondary, rgba(234, 229, 239, 0.55));
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* --- generic power toggle row (MediaTab/ClimateTab tops) ------------------*/
+.next-power-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.next-power-btn {
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: var(--r-pill, 999px);
+  border: 1px solid rgba(234, 229, 239, 0.15);
+  background: rgba(234, 229, 239, 0.05);
+  color: var(--text-secondary, rgba(234, 229, 239, 0.55));
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.next-status-text {
+  font-family: inherit;
+  font-weight: 300;
+  font-size: 12px;
+  color: var(--text-tertiary, rgba(234, 229, 239, 0.32));
+}
+
+.next-all-controls-link {
+  background: transparent;
+  border: none;
+  color: var(--accent, #a688e8);
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 8px 0;
+  text-align: left;
+}

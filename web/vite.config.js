@@ -1,5 +1,9 @@
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   // Served at the site root (increment 5 swap). The old AngularJS UI moved to
@@ -9,6 +13,16 @@ export default defineConfig({
   build: {
     outDir: '../public/app',
     emptyOutDir: true,
+    rollupOptions: {
+      // Multi-page build: the classic dashboard (index.html -> main.jsx) plus
+      // the mobile-first "next" preview layout (next.html -> src/next/main.jsx,
+      // see src/webServer.js's `/next` route). Both share the same state layer
+      // and build output directory.
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        next: resolve(__dirname, 'next.html'),
+      },
+    },
   },
   server: {
     proxy: {

@@ -16,55 +16,22 @@ import { useEffect, useState } from 'preact/hooks';
 import { commands } from '../state/index.js';
 import VolumeBar from './VolumeBar.jsx';
 import AvDrillIn from './AvDrillIn.jsx';
+import {
+  INPUT_NUMBER_TO_SCENE_ID,
+  SCENE_ID_TO_INPUT_NUMBER,
+  INPUT_NUMBER_TO_LABEL,
+  PENDING_TIMEOUT_MS,
+} from './sources.js';
 import './av.css';
 
 const FONT = "'Outfit', system-ui, sans-serif";
 const ROW_BORDER = '1px solid rgba(234, 229, 239, 0.11)';
 const ROW_BG = 'rgba(234, 229, 239, 0.03)';
 
-// The device-scene id NowPlaying.jsx / RoomPanel treat as "Spotify is the
-// receiver's active source" -- single source of truth for both the INPUT
-// picker below and `isSpotifyInputNumber`.
-const SPOTIFY_SCENE_ID = 'spotifyServerLivingRoom';
-
-// Receiver input number (entry.live.input) -> device-scene id, best-effort so
-// the INPUT segmented group can highlight the currently-active source. Not
-// exhaustive (e.g. input 6 has no device scene / quick pick here).
-const INPUT_NUMBER_TO_SCENE_ID = {
-  1: 'appleTv',
-  4: 'chromeCast',
-  5: SPOTIFY_SCENE_ID,
-};
-
-// Reverse of the above, built once -- lets a tap on a source button look up
-// the input number it's expected to land on, to drive the "pending" chase
-// animation until the live state confirms it (see `handleSelectInput`).
-const SCENE_ID_TO_INPUT_NUMBER = Object.fromEntries(
-  Object.entries(INPUT_NUMBER_TO_SCENE_ID).map(([number, sceneId]) => [sceneId, Number(number)])
-);
-
-// Receiver input number -> display label, for the slim "current source" chip.
-const INPUT_NUMBER_TO_LABEL = {
-  1: 'Apple TV',
-  4: 'Chromecast',
-  5: 'Spotify',
-  6: 'Input 6',
-};
-
-/** How long a tapped source button stays "pending" before quietly giving up
- * and reverting to the picker if the live state never confirms it. */
-const PENDING_TIMEOUT_MS = 20000;
-
-/**
- * Whether `inputNumber` (entry.live.input) is the receiver input Spotify
- * plays through -- the condition NowPlaying/RoomPanel use to decide whether
- * the now-playing drawer should be open at all.
- * @param {number} inputNumber
- * @returns {boolean}
- */
-export function isSpotifyInputNumber(inputNumber) {
-  return INPUT_NUMBER_TO_SCENE_ID[inputNumber] === SPOTIFY_SCENE_ID;
-}
+// Source maps + isSpotifyInputNumber now live in ./sources.js (shared with
+// the mobile "next" Dock/MediaTab) -- re-exported below unchanged so nothing
+// importing { isSpotifyInputNumber } from this file needs to change.
+export { isSpotifyInputNumber } from './sources.js';
 
 function Pill({ on, onClick, children }) {
   return (
