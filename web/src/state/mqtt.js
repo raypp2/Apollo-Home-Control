@@ -240,7 +240,19 @@ export function connect() {
   // Vite window.location is localhost (which may have its own stale broker).
   const host = import.meta.env.VITE_MQTT_HOST || window.location.hostname;
   const url = `ws://${host}:9001`;
+  // The 9001 websocket listener requires a credential (mosquitto
+  // `per_listener_settings`; 1883 stays anonymous for Apollo/Homebridge/devices).
+  // That credential is what makes 9001 safe to reach from the Guest VLAN.
+  //
+  // It is PUBLIC BY DESIGN, not a secret: this is a browser bundle, so anyone
+  // can read it out of devtools. Safety comes from the broker-side ACL
+  // (/etc/mosquitto/acl_ws), which grants `topic read apollo/#` and nothing
+  // else -- so extracting it buys the ability to watch state, not to send
+  // commands. Commands never travel over MQTT; they are HTTP calls to Apollo's
+  // /api routes (see commands.js), which is why read-only suffices here.
   client = mqtt.connect(url, {
+    username: import.meta.env.VITE_MQTT_USER || 'dashboard',
+    password: import.meta.env.VITE_MQTT_PASS || 'apollo-dash-ro-7f3b2c',
     reconnectPeriod: 5000,
     connectTimeout: 4000,
   });
