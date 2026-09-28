@@ -205,9 +205,14 @@
   align-items: flex-start;
   text-align: left;
   cursor: pointer;
-  /* Long-press opens the sheet: stop iOS's text-select / callout menu and
-     the double-tap-zoom delay from competing with it. */
-  touch-action: manipulation;
+  /* Long-press opens the sheet (or, on a dimmable tile, starts the
+     hold-then-slide dim gesture -- see Tile.jsx): stop iOS's text-select /
+     callout menu from competing with it. `pan-y` (rather than `manipulation`)
+     lets vertical scrolling through the tab content work normally before the
+     hold fires; once a dimmable tile's hold fires, Tile.jsx blocks scrolling
+     itself via a non-passive touchmove listener, since touch-action can't be
+     revoked mid-gesture. */
+  touch-action: pan-y;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
@@ -219,6 +224,30 @@
 
 .next-tile.is-pending .next-tile-body {
   border-color: rgba(242, 166, 94, 0.55);
+}
+
+/* Dim mode (press-and-hold-then-slide on a dimmable tile, see Tile.jsx):
+   lift the tile so the gesture reads as "engaged". */
+.next-tile.is-dim-mode .next-tile-body {
+  transform: scale(1.04);
+  border-color: rgba(242, 166, 94, 0.6);
+  background: rgba(242, 166, 94, 0.07);
+  transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+
+.next-tile-readout {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(22, 19, 28, 0.6);
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--text);
+  pointer-events: none;
 }
 
 .next-tile-fill {

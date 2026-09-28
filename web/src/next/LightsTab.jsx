@@ -66,8 +66,19 @@ function deviceTileProps(entry, openSheet) {
     dimmed: view.reachable === false || view.stale,
     pending: view.unconfirmed,
     hasMore: isDim,
+    // Only a single dim/color light gets the press-and-hold-then-slide dim
+    // gesture (see Tile.jsx) -- groups/Accent keep the plain hold->sheet.
+    dimmable: isDim,
+    commitMode: view.commit,
+    onDimPreview: (val) => commands.previewLevel(entry, val),
+    onDimCommit: (val) => commands.commitLevel(entry, val),
     onTap: () => commands.toggle(entry),
-    onOpenSheet: () => openSheet({ type: 'device', entry }),
+    // Store only the identifier, not the entry object itself -- the store
+    // replaces device entry objects on every MQTT update, so holding the
+    // object here would freeze the sheet on a stale snapshot (the live
+    // entry is re-resolved from `entries` on every render, see resolveSheet
+    // below).
+    onOpenSheet: () => openSheet({ type: 'device', stateTopic: entry.stateTopic }),
   };
 }
 
@@ -90,7 +101,8 @@ function groupTileProps(group, entries, openSheet) {
     dimmed: false,
     hasMore: true,
     onTap: () => commands.groupToggle(entries),
-    onOpenSheet: () => openSheet({ type: 'group', group, entries }),
+    // See deviceTileProps: identifier only, resolved live via resolveSheet.
+    onOpenSheet: () => openSheet({ type: 'group', groupId: group.id }),
   };
 }
 
@@ -110,15 +122,46 @@ function accentTileProps(accentEntries, openSheet, keySuffix) {
     // tap opens the preset sheet instead of doing nothing.
     onTap: () => {
       if (!anyOn) {
-        openSheet({ type: 'accent', accentEntries });
+        openSheet({ type: 'accent', ids: accentEntries.map((e) => e.stateTopic) });
         return;
       }
       accentEntries.forEach((entry) => {
         if (commands.deviceView(entry).on) commands.toggle(entry);
       });
     },
-    onOpenSheet: () => openSheet({ type: 'accent', accentEntries }),
+    // See deviceTileProps: identifiers only, resolved live via resolveSheet.
+    onOpenSheet: () => openSheet({ type: 'accent', ids: accentEntries.map((e) => e.stateTopic) }),
   };
+}
+
+/**
+ * Resolves a sheet descriptor (stateTopic/groupId/ids only, see the
+ * `onOpenSheet` calls above) into the live entry/entries TileSheet renders,
+ * looked up fresh from this render's `entries`/`accentEntries` -- never from
+ * a snapshot captured when the sheet was opened. This is what keeps the
+ * sheet's brightness bar (and group members' rows) tracking live MQTT state
+ * instead of freezing on the device's state at open time.
+ * @param {null|{type:'device',stateTopic:string}|{type:'group',groupId:string}|{type:'accent',ids:string[]}} sheet
+ * @param {Array<object>} entries
+ * @param {Array<object>} accentEntries
+ */
+function resolveSheet(sheet, entries, accentEntries) {
+  if (!sheet) return null;
+  if (sheet.type === 'device') {
+    const entry = entries.find((e) => e.stateTopic === sheet.stateTopic);
+    return entry ? { type: 'device', entry } : null;
+  }
+  if (sheet.type === 'group') {
+    const group = DEVICE_GROUPS.find((g) => g.id === sheet.groupId);
+    if (!group) return null;
+    const memberEntries = group.members.map((id) => entries.find((e) => e.id === id)).filter(Boolean);
+    return { type: 'group', group, entries: memberEntries };
+  }
+  if (sheet.type === 'accent') {
+    const liveAccentEntries = accentEntries.filter((e) => sheet.ids.includes(e.stateTopic));
+    return { type: 'accent', accentEntries: liveAccentEntries };
+  }
+  return null;
 }
 
 /**
@@ -234,7 +277,7 @@ export default function LightsTab() {
         </div>
       )}
 
-      <TileSheet sheet={sheet} onClose={() => setSheet(null)} />
+      <TileSheet sheet={resolveSheet(sheet, entries, accentEntries)} onClose={() => setSheet(null)} />
     </div>
   );
 }

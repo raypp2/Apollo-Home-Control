@@ -77,7 +77,18 @@ function MediaTab() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      {/* Volume/mute do nothing useful with the receiver off (pick a source
+          above to turn it on), so they sit dimmed and inert until it is. */}
+      <div
+        aria-disabled={!on}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          opacity: on ? 1 : 0.35,
+          pointerEvents: on ? 'auto' : 'none',
+        }}
+      >
         <button
           type="button"
           aria-label={live.mute ? 'Unmute' : 'Mute'}
@@ -103,21 +114,22 @@ function MediaTab() {
           <div className="next-status-text" style={{ marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
             Projector
           </div>
-          <div className="next-segmented">
+          {/* One power toggle, same as the receiver's: an On/Off segmented
+              pair highlighted "Off" whenever the projector is idle, which
+              read as an active state. */}
+          <div className="next-power-row">
             <button
               type="button"
-              className={`next-segmented-btn${projectorOn ? ' next-on-accent' : ''}`}
-              onClick={() => commands.momentary(projectorEntry, ['on'], 'Projector on')}
+              className={`next-power-btn${projectorOn ? ' next-on-accent' : ''}`}
+              onClick={() => commands.momentary(
+                projectorEntry,
+                [projectorOn ? 'off' : 'on'],
+                projectorOn ? 'Projector off' : 'Projector on',
+              )}
             >
-              On
+              {projectorOn ? 'Turn off' : 'Turn on'}
             </button>
-            <button
-              type="button"
-              className={`next-segmented-btn${!projectorOn ? ' next-on-accent' : ''}`}
-              onClick={() => commands.momentary(projectorEntry, ['off'], 'Projector off')}
-            >
-              Off
-            </button>
+            <span className="next-status-text">Projector {projectorOn ? 'on' : 'off'}</span>
           </div>
         </div>
       )}

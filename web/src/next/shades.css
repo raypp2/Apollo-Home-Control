@@ -1,0 +1,153 @@
+/* Apollo "next" preview layout -- Shades tab styling. Scoped under
+   .next-shades-tab (defined in next.css) so this file only adds new,
+   uniquely-named classes; it never redefines anything next.css owns. */
+
+.next-shade-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: var(--r-row, 11px);
+  border: 1px solid var(--hairline, rgba(234, 229, 239, 0.1));
+  background: rgba(234, 229, 239, 0.03);
+  padding: 12px 12px 14px;
+}
+
+.next-shade-card.is-dimmed {
+  opacity: 0.5;
+}
+
+.next-shade-card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.next-shade-name {
+  flex: 1;
+  min-width: 0;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text, #eae5ef);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.next-shade-status {
+  flex-shrink: 0;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--text-secondary, rgba(234, 229, 239, 0.55));
+}
+
+.next-shade-groupactions {
+  display: flex;
+  gap: 8px;
+}
+
+.next-shade-action-btn {
+  flex: 1;
+  min-height: 44px;
+  border-radius: var(--r-btn, 9px);
+  border: 1px solid var(--hairline, rgba(234, 229, 239, 0.1));
+  background: rgba(234, 229, 239, 0.05);
+  color: var(--text, #eae5ef);
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.next-shade-action-btn:active {
+  background: rgba(234, 229, 239, 0.09);
+}
+
+/* Horizontal position bar -- used for both the whole-group control and each
+   individual shade. touch-action: pan-y lets the page's own vertical scroll
+   keep working; the gesture only ever reads horizontal (clientX) movement,
+   so vertical drags safely fall through to page scrolling instead of being
+   captured by this row. */
+.next-shade-bar {
+  position: relative;
+  height: 46px;
+  border-radius: var(--r-row, 11px);
+  border: 1px solid var(--hairline, rgba(234, 229, 239, 0.1));
+  background: rgba(234, 229, 239, 0.03);
+  overflow: hidden;
+  touch-action: pan-y;
+  cursor: pointer;
+  user-select: none;
+}
+
+.next-shade-bar.is-unconfirmed {
+  border-color: rgba(242, 166, 94, 0.55);
+}
+
+.next-shade-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(242, 166, 94, 0.28), rgba(242, 166, 94, 0.14));
+  pointer-events: none;
+}
+
+.next-shade-bar-row {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+}
+
+.next-shade-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--off-dot, rgba(234, 229, 239, 0.18));
+}
+
+.next-shade-dot.is-on {
+  background: var(--amber, #f2a65e);
+  box-shadow: 0 0 5px 1px var(--amber, #f2a65e);
+}
+
+.next-shade-bar-label {
+  flex: 1;
+  min-width: 0;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text, #eae5ef);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.next-shade-bar-value {
+  flex-shrink: 0;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text, #eae5ef);
+}
+
+/* Individual shades, laid out flat under the group bar */
+.next-shade-individuals {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.next-shade-individuals .next-shade-bar {
+  height: 42px;
+}
+
+.next-shade-hint {
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 300;
+  font-size: 10.5px;
+  color: var(--text-tertiary, rgba(234, 229, 239, 0.32));
+}
