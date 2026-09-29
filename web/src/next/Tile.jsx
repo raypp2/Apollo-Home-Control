@@ -177,8 +177,11 @@ function useDimPressGesture({ level, commitMode, onDimPreview, onDimCommit, onOp
     onDimPreview(val);
     if (commitMode === 'live') {
       const now = Date.now();
-      if (now - s.lastCommitSend >= LIVE_THROTTLE_MS) {
+      // Skip re-sending an unchanged level (holding still at 100% used to
+      // stream the same command several times a second).
+      if (now - s.lastCommitSend >= LIVE_THROTTLE_MS && val !== s.lastSentVal) {
         s.lastCommitSend = now;
+        s.lastSentVal = val;
         onDimCommit(val);
       }
     }
@@ -201,7 +204,9 @@ function useDimPressGesture({ level, commitMode, onDimPreview, onDimCommit, onOp
       onOpenSheet();
       return;
     }
-    onDimCommit(s.lastVal);
+    if (s.lastVal !== s.lastSentVal) {
+      onDimCommit(s.lastVal);
+    }
   }
 
   function onPointerUp() {

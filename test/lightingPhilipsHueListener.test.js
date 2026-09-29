@@ -228,6 +228,21 @@ test('dimming.brightness maps to a rounded brightness field', () => {
     assert.strictEqual(giantP.status, 64);
 });
 
+test('turning OFF (bridge reports brightness 0) keeps the remembered level', () => {
+    listener._handleResourceItem({ id: GIANT_P_UUID, type: 'grouped_light', on: { on: false }, dimming: { brightness: 0 } });
+
+    assert.strictEqual(published[0].payload.power, 'OFF');
+    // publishState merges against its cache, so a remembered level may ride
+    // along -- what matters is that the OFF event's 0 never overwrites it.
+    assert.notStrictEqual(published[0].payload.brightness, 0, 'brightness 0 from an OFF group must not be published');
+});
+
+test('a group ON at its dimmest step (<0.5%) reports 1, not 0', () => {
+    listener._handleResourceItem({ id: GIANT_P_UUID, type: 'grouped_light', on: { on: true }, dimming: { brightness: 0.39 } });
+
+    assert.strictEqual(published[0].payload.brightness, 1);
+});
+
 test('a brightness-only event does not fabricate a power field in the publish payload', () => {
     // Uses sideLamp (never published to elsewhere in this file) so
     // publishState's merge has no prior cached power to carry forward --

@@ -501,7 +501,17 @@ function _handleResourceItem(item) {
         state.power = item.on.on ? 'ON' : 'OFF';
     }
     if (item.dimming && typeof item.dimming.brightness === 'number') {
-        state.brightness = Math.round(item.dimming.brightness);
+        const bri = Math.round(item.dimming.brightness);
+        if (bri >= 1) {
+            state.brightness = bri;
+        } else if (item.on && item.on.on === true) {
+            // On at the dimmest step (under 0.5%): still on, never "0".
+            state.brightness = 1;
+        }
+        // Otherwise skip it: a grouped_light reports brightness 0 when it
+        // turns OFF (the average over no lit bulbs). Publishing that wiped
+        // the remembered level, so the next ON showed 0-1% until the bridge
+        // reported the real level a few seconds later.
     }
     // Color-temperature mode wins over xy: when the bridge marks the CT
     // reading valid (`mirek_valid: true`) the bulb is glowing white via CT,

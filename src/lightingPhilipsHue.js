@@ -192,10 +192,74 @@ function publishOptimisticGroupState(groupHue, lighting_command, colorHex) {
   }
 }
 
+// Per-group command queues. The bridge takes a few hundred ms per group
+// command, while a dashboard drag streams a new level every ~100ms, so
+// commands used to pile up: the light (and the state published as each one
+// completed) crawled through every stale level for seconds after the finger
+// stopped. Commands for one group now run strictly in order, and a
+// brightness level waiting behind another waiting brightness level replaces
+// it -- only the newest level is ever sent. ON/OFF/COLOR are never dropped.
+const groupQueues = new Map(); // groupHue -> { running: boolean, items: Array }
+
+function isLevelCommand(cmd) {
+  return cmd !== '' && !isNaN(cmd);
+}
+
+/**
+ * Queues `item` for its group and drains the queue with `execute`, one item at
+ * a time. A level command replaces a level command still waiting at the tail.
+ * Resolves once the queue this call started is drained (immediately if a
+ * drain is already running).
+ * @param {string|number} groupHue
+ * @param {{operation_num:number, lighting_command:string, colorHex?:string}} item
+ * @param {function(object): Promise<void>} execute
+ */
+async function enqueueGroupCommand(groupHue, item, execute) {
+  const key = String(groupHue);
+  let q = groupQueues.get(key);
+  if (!q) {
+    q = { running: false, items: [] };
+    groupQueues.set(key, q);
+  }
+  const last = q.items[q.items.length - 1];
+  if (last && isLevelCommand(last.lighting_command) && isLevelCommand(item.lighting_command)) {
+    console.log(`${item.operation_num} - Hue group ${key}: level ${item.lighting_command} supersedes queued ${last.lighting_command} (op ${last.operation_num})`);
+    q.items[q.items.length - 1] = item;
+  } else {
+    q.items.push(item);
+  }
+  if (q.running) {
+    return;
+  }
+  q.running = true;
+  try {
+    while (q.items.length > 0) {
+      const next = q.items.shift();
+      try {
+        await execute(next);
+      } catch (err) {
+        // One failed command (e.g. bridge unreachable) mustn't strand the rest.
+        console.log(`${next.operation_num} - ERR: Hue group ${key} command ${next.lighting_command} failed: ${err}`);
+      }
+    }
+  } finally {
+    q.running = false;
+  }
+}
+
 async function hue_group_command(operation_num, groupHue, lighting_command, colorHex) {
+  const item = {
+    operation_num,
+    lighting_command: String(lighting_command).toUpperCase(), // Make case insensitive
+    colorHex,
+  };
+  return enqueueGroupCommand(groupHue, item, (it) =>
+    run_hue_group_command(it.operation_num, groupHue, it.lighting_command, it.colorHex));
+}
+
+async function run_hue_group_command(operation_num, groupHue, lighting_command, colorHex) {
   const api = await initializeApi();
   let groupState;
-  lighting_command = lighting_command.toUpperCase(); // Make case insensitive
 
   try {
     if (lighting_command === 'OFF') {
@@ -260,4 +324,6 @@ async function hue_scene_command(operation_num, sceneID, lighting_command, group
 module.exports = {
   hue_group_command,
   hue_scene_command,
+  // Exported for tests only.
+  _enqueueGroupCommand: enqueueGroupCommand,
 };
