@@ -1,9 +1,11 @@
 import { store } from '../state/index.js';
+import AppsSection from './apps/AppsSection.jsx';
 
 // Apollo v2 dashboard -- increment 5's system status screen: the full-panel
 // view behind the status strip's "All systems normal ›" button (see
-// documentation/dashboard-redesign-plan.md §5.6). Four sections in order --
-// Connection, Bridges, Devices, Links -- covering strictly more ground than
+// documentation/dashboard-redesign-plan.md §5.6). Five sections in order --
+// Apps (a widget grid of the home-server tools), Connection, Bridges,
+// Devices -- covering strictly more ground than
 // the strip's one-line summary: the strip tells you *that* something's off,
 // this tells you *what*.
 //
@@ -170,15 +172,6 @@ function deviceStatus(entry) {
   return { rank: 0, label: 'ok', color: 'var(--status-green, #7ed9a0)' };
 }
 
-const LINKS = [
-  { label: 'Homebridge', href: 'http://pi.local:8581/' },
-  { label: 'DMX', href: 'http://dmx.local/' },
-  { label: 'Uptime Kuma (Status)', href: 'http://pi.local:3001' },
-  { label: 'PM2', href: 'https://app.pm2.io/' },
-  { label: 'Logs', href: '/logs/' },
-  { label: 'Legacy dashboard', href: '/legacy' },
-];
-
 function ConnectionSection() {
   const info = connectionInfo(store.connection.value);
   return (
@@ -338,44 +331,6 @@ function DevicesSection() {
   );
 }
 
-function LinksSection() {
-  return (
-    <div>
-      <div style={sectionLabel}>Links</div>
-      <div style={card}>
-        {LINKS.map((link, index) => (
-          <div key={link.href} style={index === LINKS.length - 1 ? rowLast : row}>
-            <a
-              href={link.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                fontFamily: FONT,
-                fontWeight: 500,
-                fontSize: 13,
-                color: 'var(--accent, #a688e8)',
-                textDecoration: 'none',
-                flex: 1,
-              }}
-            >
-              {link.label}
-            </a>
-            <span
-              style={{
-                fontFamily: MONO,
-                fontSize: 11,
-                color: 'var(--text-tertiary, rgba(234, 229, 239, 0.32))',
-              }}
-            >
-              {link.href}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /**
  * Full-panel overlay: the drill-in behind the status strip's health label.
  * @param {object} props
@@ -391,10 +346,10 @@ export default function StatusScreen({ onClose }) {
         <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: 18 }}>System status</div>
       </div>
       <div style={body}>
+        <AppsSection />
         <ConnectionSection />
         <BridgesSection />
         <DevicesSection />
-        <LinksSection />
       </div>
     </div>
   );

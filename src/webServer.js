@@ -132,6 +132,18 @@ app.post('/api/prefs/swatches', express.json(), function(request, response) {
     response.json(prefs);
 });
 
+// Home-server app status for the dashboard's System Status "Apps" widgets
+// (src/systemApps.js). Registered BEFORE the '/api' catch-all for the same
+// reason as /api/health: otherwise "system" would be routed into
+// handleRequest as a device command. Cached ~8s; never logs per request.
+app.get('/api/system/apps', function(request, response) {
+    require('./systemApps').getApps().then(function(result) {
+        response.json(result);
+    }).catch(function(err) {
+        response.status(500).json({ error: String((err && err.message) || err) });
+    });
+});
+
 app.use('/api', function(request, response, next) {
 
 	console.log("\n\n###### API Message Received ######");
