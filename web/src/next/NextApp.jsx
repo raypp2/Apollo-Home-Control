@@ -8,7 +8,7 @@
 // Desktop (>=900px, see next.css): the plane fills a left column and a right
 // rail holds the header/scenes/tabs/dock -- see the `.next-app` media query.
 
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { bootstrap, store, ui } from '../state/index.js';
 import { Plane } from '../plan/index.js';
 import { SceneBar } from '../scenes/index.js';
@@ -74,6 +74,37 @@ function useDefaultRoom() {
 }
 
 /**
+ * Marks the scene row's scroller with `.has-more-right` only while chips
+ * continue past its right edge (see next.css's fade mask), re-checking on
+ * resize, on scroll, and when the chip list itself changes.
+ * @param {{current: HTMLElement|null}} rowRef - the .next-scene-row element
+ */
+function useSceneRowOverflowFade(rowRef) {
+  useEffect(() => {
+    const row = rowRef.current;
+    const scroller = row && row.querySelector('.scene-bar-scroll');
+    if (!scroller) return undefined;
+    const update = () => {
+      const more = scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1;
+      scroller.classList.toggle('has-more-right', more);
+    };
+    update();
+    // Chip widths change once the webfont loads, without resizing the scroller.
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(update);
+    scroller.addEventListener('scroll', update, { passive: true });
+    const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : null;
+    if (resize) resize.observe(scroller);
+    const mutations = new MutationObserver(update);
+    mutations.observe(scroller, { childList: true, subtree: true, characterData: true });
+    return () => {
+      scroller.removeEventListener('scroll', update);
+      if (resize) resize.disconnect();
+      mutations.disconnect();
+    };
+  }, []);
+}
+
+/**
  * Short "something's wrong" text for the slim banner, or null when healthy.
  * Same precedence as status/StatusStrip.jsx's computeHealth (bridge offline
  * > stale devices > degraded flag) -- duplicated in short form here rather
@@ -115,6 +146,8 @@ export default function NextApp() {
 
   const [tab, setTab] = useState(readStoredTab);
   const [statusOpen, setStatusOpen] = useState(false);
+  const sceneRowRef = useRef(null);
+  useSceneRowOverflowFade(sceneRowRef);
 
   const connectionState = store.connection.value;
   const problem = problemText();
@@ -143,7 +176,7 @@ export default function NextApp() {
         </button>
       </header>
 
-      <div class="next-scene-row">
+      <div class="next-scene-row" ref={sceneRowRef}>
         <SceneBar />
       </div>
 

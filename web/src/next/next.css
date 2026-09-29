@@ -73,8 +73,11 @@
 }
 
 /* Right-edge fade mask on the scrollable chip row, so a horizontally
-   overflowing scene bar hints at more content instead of hard-cutting. */
-.next-scene-row .scene-bar-scroll {
+   overflowing scene bar hints at more content instead of hard-cutting.
+   Only while chips actually continue past the right edge (NextApp toggles
+   .has-more-right) -- unconditionally it faded the last chip even on a wide
+   screen where everything fits. */
+.next-scene-row .scene-bar-scroll.has-more-right {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
   mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
 }
