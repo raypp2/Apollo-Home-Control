@@ -11,7 +11,7 @@
 const assert = require('node:assert');
 const { test } = require('node:test');
 
-const { _buildNowPlayingPayload } = require('../src/spotify');
+const { _buildNowPlayingPayload, _classifyNowPlayingError } = require('../src/spotify');
 
 test('playing: extracts track, artist, albumArt, device, isPlaying true', () => {
     const body = {
@@ -86,4 +86,15 @@ test('malformed body: deeply wrong shapes (numbers/arrays where objects expected
     assert.strictEqual(payload.artist, null);
     assert.strictEqual(payload.albumArt, null);
     assert.strictEqual(payload.device, null);
+});
+
+test('a revoked refresh token (invalid_grant) is classified as auth', () => {
+    const err = new Error('An authentication error occurred while communicating with Spotify\'s Web API.');
+    err.body = { error: 'invalid_grant', error_description: 'Refresh token revoked' };
+    assert.strictEqual(_classifyNowPlayingError(err), 'auth');
+});
+
+test('network and other API failures are classified as unreachable', () => {
+    assert.strictEqual(_classifyNowPlayingError(new Error('getaddrinfo ENOTFOUND accounts.spotify.com')), 'unreachable');
+    assert.strictEqual(_classifyNowPlayingError(undefined), 'unreachable');
 });

@@ -112,6 +112,23 @@ function _buildNowPlayingPayload(playbackBody) {
  * `{isPlaying:false, reachable:false, ...}` payload for that outage, and
  * keeps trying on the next tick -- it never stops the timer.
  */
+/**
+ * Classifies a now-playing poll failure for the dashboard: 'auth' when
+ * Spotify rejected the stored refresh token (revoked/expired -- only a fresh
+ * sign-in fixes it, see _scripts/spotify-reauth.js), else 'unreachable'.
+ * @param {*} err - a spotify-web-api-node error (has .body / .message)
+ * @returns {'auth'|'unreachable'}
+ */
+function _classifyNowPlayingError(err) {
+    let detail = '';
+    try {
+        detail = JSON.stringify((err && err.body) || '') + ' ' + ((err && err.message) || String(err));
+    } catch {
+        detail = String(err);
+    }
+    return /invalid_grant|invalid_client|revoked/i.test(detail) ? 'auth' : 'unreachable';
+}
+
 function pollNowPlaying() {
     spotifyApi.setAccessToken(process.env.spotifyRefreshToken);
     spotifyApi.setCredentials({
@@ -135,6 +152,7 @@ function pollNowPlaying() {
                 mqttClient.publish(NOW_PLAYING_TOPIC, {
                     isPlaying: false,
                     reachable: false,
+                    error: _classifyNowPlayingError(err),
                     timestamp: Math.floor(Date.now() / 1000),
                     source: 'poll',
                 }, { qos: 1, retain: true });
@@ -355,4 +373,5 @@ module.exports = {
     spotifyResume,
     startNowPlayingPublisher,
     _buildNowPlayingPayload,
+    _classifyNowPlayingError,
 }

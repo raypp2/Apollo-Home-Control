@@ -84,6 +84,15 @@ function AlbumArt({ src }) {
 function NowPlaying({ spotifyEntry, open = false }) {
   const nowPlaying = store.spotify.value;
   const nothingPlaying = !nowPlaying || nowPlaying.reachable === false;
+  // An unreachable Spotify isn't "nothing playing": say why, so a revoked
+  // sign-in (fix: `node _scripts/spotify-reauth.js`) doesn't look like idle.
+  const authExpired = Boolean(nowPlaying && nowPlaying.reachable === false && nowPlaying.error === 'auth');
+  let emptyLabel = 'Nothing playing';
+  if (authExpired) {
+    emptyLabel = 'Spotify disconnected \u2014 sign-in expired';
+  } else if (nowPlaying && nowPlaying.reachable === false) {
+    emptyLabel = 'Spotify unavailable';
+  }
 
   return (
     <div className={`av-drawer${open ? ' is-open' : ''}`}>
@@ -105,10 +114,13 @@ function NowPlaying({ spotifyEntry, open = false }) {
               fontFamily: FONT,
               fontWeight: 300,
               fontSize: 12,
-              color: 'var(--text-tertiary, rgba(234, 229, 239, 0.32))',
+              color: authExpired
+                ? 'var(--amber-text, #f2c79a)'
+                : 'var(--text-tertiary, rgba(234, 229, 239, 0.32))',
             }}
+            title={authExpired ? 'Re-authorize with: node _scripts/spotify-reauth.js' : undefined}
           >
-            Nothing playing
+            {emptyLabel}
           </div>
         </>
       ) : (

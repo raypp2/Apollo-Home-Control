@@ -1,6 +1,8 @@
 /*
 
 SPOTIFY SETUP HELPER
+SUPERSEDED: to re-authorize, run `node _scripts/spotify-reauth.js` instead
+(it does these steps end to end and installs the token on the Pi).
 
 THIS IS NOT PART OF THE MAIN APPLICATION
 It is used only for setup and testing, specifically to get a refresh token from Spotify.
