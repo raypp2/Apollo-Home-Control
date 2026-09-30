@@ -229,3 +229,28 @@ test('summarizeRuns: a partial run on its second attempt counts as failing', () 
     const s = apps.summarizeRuns([{ job: 'etc.awsw', finished: 1, result: 'partial', attempt: 2, dataAdded: 0 }], null);
     assert.strictEqual(s.failingJobs.length, 1);
 });
+
+test('kuma: APPS_KUMA_API_KEY is sent as basic auth with an empty username', async () => {
+    const { deps } = makeDeps({ env: { APPS_KUMA_API_KEY: 'k123' } });
+    const inner = deps.fetch;
+    let seen = null;
+    deps.fetch = async (url, o) => {
+        if (url.includes(':3001')) seen = o && o.headers && o.headers.Authorization;
+        return inner(url, o);
+    };
+    const out = await apps.collectApps(deps);
+    assert.strictEqual(seen, 'Basic ' + Buffer.from(':k123').toString('base64'));
+    assert.strictEqual(out.apps.kuma.ok, true);
+});
+
+test('kuma: no API key sends no Authorization header', async () => {
+    const { deps } = makeDeps();
+    const inner = deps.fetch;
+    let headers = 'unset';
+    deps.fetch = async (url, o) => {
+        if (url.includes(':3001')) headers = o && o.headers;
+        return inner(url, o);
+    };
+    await apps.collectApps(deps);
+    assert.strictEqual(headers, undefined);
+});

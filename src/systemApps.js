@@ -344,7 +344,12 @@ async function collectApps(deps) {
         return JSON.parse(await deps.fs.readFile(setting(env, 'APPS_HOST_JSON'), 'utf8'));
     })(), SOURCE_TIMEOUT_MS);
     const kumaRaw = withTimeout((async function() {
-        const res = await fetchOk(deps, setting(env, 'APPS_KUMA_URL'));
+        // Uptime Kuma API keys authenticate /metrics as HTTP basic auth with an
+        // empty username and the key as the password.
+        const headers = env.APPS_KUMA_API_KEY
+            ? { Authorization: 'Basic ' + Buffer.from(':' + env.APPS_KUMA_API_KEY).toString('base64') }
+            : undefined;
+        const res = await fetchOk(deps, setting(env, 'APPS_KUMA_URL'), headers ? { headers } : undefined);
         return parseKumaMetrics(await res.text());
     })(), SOURCE_TIMEOUT_MS);
     const runsRaw = withTimeout((async function() {
