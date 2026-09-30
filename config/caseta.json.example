@@ -1,0 +1,18 @@
+[
+  {
+    "id": "bedroomPico",
+    "room": "master",
+    "device": "/device/3",   // Pico3ButtonRaiseLower
+    "buttons": [
+      { "id": "/button/101", "name": "on" },
+      { "id": "/button/102", "name": "favorite" },
+      { "id": "/button/103", "name": "off" },
+      { "id": "/button/104", "name": "raise" },
+      { "id": "/button/105", "name": "lower" }
+    ],
+    // "<buttonName>.<Press|Release|LongHold>": "<Apollo command path>"
+    // e.g. "on.Press": "LIGHTS/bedroomMain/ON". Empty = events only published to MQTT
+    // (apollo/home/caseta/<id>/button).
+    "actions": {}
+  }
+]

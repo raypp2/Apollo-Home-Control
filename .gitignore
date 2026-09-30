@@ -24,6 +24,7 @@ config/lights.json
 config/triggers.json
 config/deviceScenes.json
 config/insteonKeypad.json
+config/caseta.json
 config/lightingScenes.json
 config/macros.json
 

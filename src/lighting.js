@@ -47,6 +47,8 @@ const { dmx_scene_command,
           = require('./lightingDmx');
 const { shelly_command }                        // Shelly device module
            = require('./lightingShelly.js');
+const { caseta_command }                        // Lutron Caseta module
+           = require('./lightingCaseta.js');
 const { wled_command }                          // WLED device module
            = require('./lightingWled.js');
 
@@ -158,6 +160,10 @@ function lighting_device_command (operation_num, device, lighting_command, param
               lights_new[i].checked = true;
               lights_new[i].status = 100;
           }
+          break;
+        case 'caseta':
+          console.log("%d - Setting Caseta %s to %s",operation_num, lights_new[i].address, lighting_command);
+          caseta_command(operation_num, lights_new[i].address, lighting_command);
           break;
         case 'wled':
           console.log("%d - Turning WLED %s to %s",operation_num, lights_new[i].address, lighting_command);

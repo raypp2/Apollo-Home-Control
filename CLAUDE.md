@@ -10,7 +10,7 @@ Single-owner, single-install. Deployed by rsync to Raspberry Pi 5.
 
 - `index.js` — entry point. Loads JSON5 config files, starts the web server, SQS listener, and Insteon listener.
 - `src/handler.js` — central command router. Switches on the first segment of the API path (DEVICES, LIGHTS, LIGHTINGSCENES, MACROS, SPEAKERS, AC, LOCKS, DEVICESCENES) and dispatches to per-ecosystem modules.
-- `src/lighting.js` + `src/lightingInsteon.js` + `src/lightingInsteonListener.js` + `src/lightingPhilipsHue.js` + `src/lightingDmx.js` + `src/lightingShelly.js` + `src/lightingWled.js` — per-protocol lighting drivers.
+- `src/lighting.js` + `src/lightingInsteon.js` + `src/lightingInsteonListener.js` + `src/lightingPhilipsHue.js` + `src/lightingDmx.js` + `src/lightingShelly.js` + `src/lightingWled.js` + `src/lightingCaseta.js` — per-protocol lighting drivers. Caseta talks LEAP to the Lutron Smart Bridge (192.168.20.71) with a client certificate from `_scripts/caseta-pair.js`, stored only on the Pi in `data/caseta.json`; Pico buttons publish to `apollo/home/caseta/<picoId>/button` and can be mapped to Apollo commands in `config/caseta.json`.
 - `src/iTachControllers.js` — TCP to GlobalCache iTach controllers for serial, IR, and contact-closure.
 - `src/somfyBridge.js` — HTTP to ESPSomfy-RTS bridge for shades.
 - `src/spotify.js`, `src/findMy.js`, `src/alexaSpeaker.js`, `src/alexaAC.js` — single-purpose modules.

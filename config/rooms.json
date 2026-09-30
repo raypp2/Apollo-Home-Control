@@ -813,6 +813,7 @@
       },
     ],
     fixtures: {
+      bedroomMain: { x: 160, y: 129 },
       bedroomColor: [
         {
           x: 300.128,

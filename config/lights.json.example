@@ -161,5 +161,19 @@
         "displayCategories": ["SCENE_TRIGGER"],
         "isDimmable": true
 	}
+},
+{
+    "title": "Bedroom Main Lights",
+    "id": "bedroomMain",
+    "room": "master",
+    "icon": "icon-of_wall",
+    "type": "caseta",
+    "address": "/zone/1",
+    "status": "",
+    "alexa": {
+		"invocations":["Bedroom lights", "Main lights"],
+        "displayCategories": ["LIGHT"],
+        "isDimmable": true
+	}
 }
 ]

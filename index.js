@@ -123,6 +123,7 @@ if (DRY_RUN) {
     console.log("###### APOLLO_DRY_RUN=1 -- SQS Listener NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- Insteon Listener NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- Hue SSE Listener NOT started (dry-run) ######");
+    console.log("###### APOLLO_DRY_RUN=1 -- Caseta driver NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- IP device power poller NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- MQTT Set Listener NOT started (dry-run) ######");
 } else {
@@ -150,6 +151,12 @@ if (DRY_RUN) {
     // connection to real hardware, so it's skipped in dry-run.
     const hueListener = require('./src/lightingPhilipsHueListener');
     hueListener.startListener();
+
+    // Lutron Caseta (LEAP) driver -- persistent connection to the Smart
+    // Bridge for state, commands and Pico button events. Stays disabled (logs
+    // once) if data/caseta.json pairing creds are absent.
+    const casetaDriver = require('./src/lightingCaseta');
+    casetaDriver.startCasetaListener(handleRequest);
 
     // Periodic power-state poll for ip_control devices (Stage 5 of the MQTT
     // plan, issue #13) -- publishes source:'poll' power state every 60s

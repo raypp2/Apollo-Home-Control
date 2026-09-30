@@ -76,6 +76,7 @@ const ECOSYSTEM_BY_TYPE = {
     'hue-group': 'hue',
     dmxFixture: 'dmx',
     shelly: 'shelly',
+    caseta: 'caseta',
     wled: 'wled',
     iTach_serial: 'itach',
     iTach_ir: 'itach',
@@ -89,7 +90,7 @@ const ECOSYSTEM_BY_TYPE = {
 // deliberately excluded -- they don't publish state yet, so marking them
 // "stateful" for Alexa would surface an empty/stale shadow, which the Alexa
 // app shows as "device unresponsive".
-const ALEXA_STATEFUL_TYPES = new Set(['insteon', 'hue-group', 'shelly', 'Somfy-Bridge']);
+const ALEXA_STATEFUL_TYPES = new Set(['insteon', 'hue-group', 'shelly', 'caseta', 'Somfy-Bridge']);
 
 /**
  * Pure qualification check: does this config entry both (a) have an `alexa`

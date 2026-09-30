@@ -50,7 +50,7 @@ const STATE_SUFFIX = '/state';
 const FIELD_ORDER = ['power', 'brightness', 'position'];
 
 // Config `type` values controlled through /LIGHTS/<id>/... paths.
-const LIGHT_TYPES = new Set(['insteon', 'hue-group', 'shelly', 'wled', 'dmxFixture']);
+const LIGHT_TYPES = new Set(['insteon', 'hue-group', 'shelly', 'caseta', 'wled', 'dmxFixture']);
 
 // Config `type` value controlled through /DEVICES/<id>/all/... paths.
 const SOMFY_TYPE = 'Somfy-Bridge';
