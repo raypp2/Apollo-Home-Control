@@ -41,15 +41,6 @@ const MESSAGE_LONG_POLLING = 20;
 // anything longer than a few seconds is likely an error. This prevents the server from processing old messages
 const MESSAGE_AGE_LIMIT_SECONDS = 5;
 
-// Stage 10 parallel-run switch (issue #23): read once at module level, same
-// as the constants above. 'sqs' (default) -- this listener executes commands
-// as it always has, and mqttCommandListener.js runs log-only. 'shadow' --
-// inverse: this listener still polls, logs, and deletes messages (so SQS
-// doesn't back up), but does NOT call handleRequest -- mqttCommandListener.js
-// executes instead. See sample.env and src/mqttCommandListener.js.
-const COMMAND_SOURCE = process.env.COMMAND_SOURCE === 'shadow' ? 'shadow' : 'sqs';
-
-
 // Ensure the environment variables are loaded correctly
 const requiredEnvVariables = ['AWSregion', 'AWSaccessKeyId', 'AWSsecretAccessKey', 'AWSQueueURL'];
 for (const varName of requiredEnvVariables) {
@@ -130,18 +121,11 @@ const receiveMessages = async () => {
       // After successfully processing the message, attempt to delete it from the queue
       await deleteMessage(message.ReceiptHandle);
 
-      // Stage 10 parallel-run instrumentation (issue #23): log the same
-      // latency shape as mqttCommandListener.js's SHADOW-CMD line so the two
-      // paths can be compared directly in apollo.log.
+      // Latency from Alexa Lambda send to Apollo receipt, for grepping in apollo.log.
       const sqsLatencyMs = Date.now() - parseInt(message.Attributes.SentTimestamp);
       console.log("SQS-CMD: %s latency=%dms", message.Body, sqsLatencyMs);
 
-      // Handle the message -- unless COMMAND_SOURCE=shadow, in which case
-      // mqttCommandListener.js is the one actually executing commands and
-      // this becomes log-only (still polls/deletes so the queue never backs up).
-      if (COMMAND_SOURCE !== 'shadow') {
-        handleRequest(message.Body);
-      }
+      handleRequest(message.Body);
     }
   } catch (err) {
     console.error(err);

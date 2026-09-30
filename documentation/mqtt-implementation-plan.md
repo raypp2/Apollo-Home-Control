@@ -558,6 +558,8 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
 
 ## Stage 10: Migrate Alexa Commands from SQS to IoT Core
 
+> **2026-09-29 — Stage 10 CANCELLED (#23).** The shadow-delta command path was validated for latency (p50 0.6s, p90 1.0s, p99 1.1s over 269 commands, Jul 7–Sep 29) but carried only 269 of 763 Alexa commands: actions (AC, macros, device scenes, locks, speakers) have no desired state and cannot travel via shadow. Moving commands to IoT would make voice control depend on the IoT bridge for no functional gain. Decision: Alexa commands stay on SQS permanently; the parallel shadow-command path (`src/mqttCommandListener.js`, `COMMAND_SOURCE`) has been removed. Shadow *state* reporting (ReportState/ChangeReport) is unaffected. The text below is retained as historical design record.
+
 **What:** Replace SQS command polling with IoT Core Device Shadow "desired state" updates. Alexa commands flow through the same IoT Core infrastructure as state reporting, eliminating SQS entirely.
 
 **How it works now (SQS):**
@@ -696,7 +698,7 @@ Each stage adds tests alongside the implementation. Apollo already has smoke tes
 - Stages 2-6 and 9 can be done in any order after Stage 1
 - Stage 7 benefits from having several ecosystems publishing state
 - Stage 8 can start after Stage 1, improves with more device stages
-- Stage 10 requires Stage 7 (IoT Core must be running)
+- Stage 10 (cancelled) required Stage 7 (IoT Core must be running)
 - Stage 11 can start after Stage 9 but benefits from Stages 8 and 12
 - Stage 12 requires Stages 4 and 7
 - Stage 13 should wait until Homebridge 2.0 Matter plugins are confirmed compatible

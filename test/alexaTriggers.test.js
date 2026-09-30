@@ -198,8 +198,8 @@ test('buildTriggers() writes config/triggers.json synchronously -- the file is c
         // synchronously right after buildTriggers() returns is exactly the
         // invariant the startup-race fix depends on: index.js calls
         // buildTriggers() and then, later in the same synchronous startup
-        // sequence, mqttCommandListener.js's ensureInit() reads this same
-        // file back with fs.readFileSync.
+        // sequence, later startup steps may read this same file back with
+        // fs.readFileSync.
         const raw = fs.readFileSync(TRIGGERS_JSON_PATH, 'utf8');
         const parsed = JSON.parse(raw);
         assert.strictEqual(Array.isArray(parsed), true);

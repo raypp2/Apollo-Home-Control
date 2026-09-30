@@ -124,7 +124,6 @@ if (DRY_RUN) {
     console.log("###### APOLLO_DRY_RUN=1 -- Insteon Listener NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- Hue SSE Listener NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- IP device power poller NOT started (dry-run) ######");
-    console.log("###### APOLLO_DRY_RUN=1 -- MQTT Command Listener NOT started (dry-run) ######");
     console.log("###### APOLLO_DRY_RUN=1 -- MQTT Set Listener NOT started (dry-run) ######");
 } else {
     // Start SQS Listener
@@ -135,20 +134,12 @@ if (DRY_RUN) {
     const insteonListener = require('./src/lightingInsteonListener');
     insteonListener.startListener(handleRequest);
 
-    // Start MQTT Command Listener (Stage 10 of the MQTT plan, issue #23) --
-    // subscribes to IoT shadow deltas for Alexa commands, running in parallel
-    // with the SQS listener above during the validation period. See
-    // src/mqttCommandListener.js and the COMMAND_SOURCE env var (sample.env).
-    const mqttCommandListener = require('./src/mqttCommandListener');
-    mqttCommandListener.startCommandListener(handleRequest);
-
     // Start MQTT Set Listener (Stage 6 of the MQTT plan, issue #14) --
     // subscribes to apollo/+/+/+/set, the generic command topic
     // homebridge-mqttthing publishes to when a HomeKit accessory is
     // controlled, and routes it through the same handleRequest() path as
-    // every other command source. Independent of the SQS/shadow
-    // COMMAND_SOURCE switch above -- HomeKit is its own command channel, not
-    // part of the Alexa parallel-run comparison. See src/mqttSetListener.js.
+    // every other command source. HomeKit's own command channel,
+    // independent of the SQS listener (Alexa). See src/mqttSetListener.js.
     const mqttSetListener = require('./src/mqttSetListener');
     mqttSetListener.startSetListener(handleRequest);
 

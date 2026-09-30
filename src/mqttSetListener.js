@@ -13,16 +13,10 @@
  *               lightingShelly.js / somfyBridge.js etc. already cover the
  *               "state" half.
  *
- *               Unlike mqttCommandListener.js (Stage 10, AWS IoT shadow
- *               deltas for Alexa), this listener resolves a config entry by
- *               its canonical MQTT topic (via mqttTopics.js's findByTopic --
- *               `.../set` -> `.../state` -> config entry), not by an
- *               endpointId/trigger lookup, and it is NEVER gated by
- *               COMMAND_SOURCE: that switch only exists to compare the SQS
- *               and shadow-delta paths for the *same* Alexa-origin commands
- *               during Stage 10's validation period. HomeKit is a completely
- *               independent command channel, so this listener always
- *               executes.
+ *               This listener resolves a config entry by its canonical MQTT
+ *               topic (via mqttTopics.js's findByTopic -- `.../set` ->
+ *               `.../state` -> config entry). It is the HomeKit/Homebridge
+ *               command channel, independent of the SQS listener (Alexa).
  *
  *               Retained messages are ignored (see handleSetInner() below):
  *               a `/set` topic is a one-shot command, not state, so replaying
@@ -110,7 +104,6 @@ function _init({ subscribe, findByTopic, handleRequest } = {}) {
 
 /**
  * Called from index.js with handleRequest injected (mirrors
- * mqttCommandListener.js's startCommandListener() and
  * lightingInsteonListener.js's startListener()) -- this module never
  * requires('./handler') itself, avoiding any load-order dependency on when
  * handler.js finishes requiring '../index'.

@@ -231,13 +231,11 @@ function buildTriggersArray({ devices, deviceScenes, lights, lightingScenes, mac
  *
  * The write is synchronous (fs.writeFileSync) rather than fs.writeFile --
  * deliberately. index.js calls buildTriggers() synchronously at startup,
- * immediately followed (same synchronous call stack) by
- * mqttCommandListener.js's startCommandListener() -> ensureInit(), which
- * reads config/triggers.json back with fs.readFileSync. With an async write,
- * that later synchronous read can race ahead of the write actually landing
- * on disk, hitting a truncated/empty file. Writing synchronously guarantees
- * triggers.json is fully flushed before buildTriggers() returns, so every
- * later synchronous startup step sees the complete file. One small JSON
+ * and any later synchronous startup step may read config/triggers.json back
+ * with fs.readFileSync. With an async write, such a read can race ahead of
+ * the write actually landing on disk, hitting a truncated/empty file.
+ * Writing synchronously guarantees triggers.json is fully flushed before
+ * buildTriggers() returns. One small JSON
  * file, once at startup -- the added latency is negligible.
  */
 function buildTriggers(){

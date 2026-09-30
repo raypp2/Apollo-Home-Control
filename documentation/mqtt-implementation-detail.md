@@ -28,7 +28,7 @@ Stage 9  Dashboard WebSocket + Spotify now-playing   (#21, #22)
 Stage 5  iTach/TCP persistent connections            (#13)
 Stage 6  Homebridge mqttthing                        (#14)
 Stage 7  IoT Core state bridge + ReportState/ChangeReport  (#15–#19)
-Stage 10 SQS → shadow-delta commands                 (#23)
+Stage 10 SQS → shadow-delta commands                 (#23) — CANCELLED 2026-09-29, SQS stays
 Stage 12 Color control                               (#26)
 Stage 11 Dashboard redesign (needs its own sub-plan) (#24, #25)
 Stage 13 Homebridge 2.0 + Matter (when ecosystem matures)  (#27)
@@ -76,7 +76,7 @@ without actuating hardware.
 
 3. **[#28](https://github.com/raypp2/Apollo-Home-Control/issues/28) — SQS listener minimal fixes.**
    Only the poison-message guard and error backoff. Skip the dedupe rewrite — SQS is
-   deleted in Stage 10; don't invest beyond safety.
+   permanent (Stage 10 cancelled 2026-09-29); keep fixes minimal.
 
 4. **[#31](https://github.com/raypp2/Apollo-Home-Control/issues/31) / [#32](https://github.com/raypp2/Apollo-Home-Control/issues/32)**
    land naturally when Stage 3 touches `lightingInsteonListener.js` and Stage 10 touches
@@ -88,14 +88,13 @@ without actuating hardware.
 
 ### New modules and load order
 
-Two new modules in Stage 1, one in Stage 8, one in Stage 10:
+Two new modules in Stage 1, one in Stage 8 (Stage 10's `mqttCommandListener.js` was built, then removed when Stage 10 was cancelled):
 
 | Module | Depends on config? | Load order note |
 |---|---|---|
 | `src/mqttClient.js` | No — env vars only | Safe to require anywhere, no `require('../index')` |
 | `src/mqttTopics.js` | Yes — needs `lights`/`devices` | Uses the standard `require('../index')` pattern; must load after `index.js` exports (same rule as every existing module) |
 | `src/healthMonitor.js` | Yes | Same |
-| `src/mqttCommandListener.js` | Yes (+ handler) | Same |
 
 `index.js` startup order becomes:
 
@@ -204,7 +203,7 @@ optimistic-verification comparisons (Stage 3).
 ### Command tracing
 
 Preserve the `operation_num` logging convention for MQTT-originated events. Inbound
-`set` messages and shadow deltas (Stage 10) route through `handleRequest`, which already
+`set` messages route through `handleRequest`, which already
 assigns numbers. State publishes triggered by device events (SSE, native MQTT, Insteon
 listener) log with the existing `X -` prefix convention used by the Insteon listener.
 
@@ -461,12 +460,7 @@ deltas only:
   prerequisite: `alexaTriggers.js` should emit `location`/`mqttName` into
   `triggers.json` so the Lambda can map endpointId → shadow name — add that field in
   Stage 1 while touching config schemas.
-- **Stage 10 (#23):** new `src/mqttCommandListener.js` subscribes to bridged shadow
-  delta topics, translates desired-state JSON to the existing
-  `/MODULE/DEVICE/COMMAND/...` string, calls `handleRequest` (no response object — the
-  SQS pattern), then publishes reported state. Runs in parallel with SQS ≥2 weeks with
-  per-command source logging; then `sqsListener.js` and the `@aws-sdk/client-sqs`
-  dependency are deleted (which also closes the remainder of #28).
+- **Stage 10 (#23) — CANCELLED 2026-09-29:** the shadow-delta command listener (`src/mqttCommandListener.js`) was built and validated for latency (p50 0.6s, p99 1.1s over 269 commands) but covered only 269 of 763 Alexa commands (actions have no desired state) and would add an IoT-bridge dependency to voice control. Alexa commands stay on SQS; the listener and the `COMMAND_SOURCE` switch were removed. Shadow state reporting is unchanged.
 - **Stage 12 (#26):** extend the Stage 4 SSE mapper and the WLED/DMX normalizers with
   the `color` payload field; shadow + Lambda changes per strategy doc.
 

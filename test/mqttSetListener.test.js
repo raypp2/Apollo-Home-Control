@@ -4,9 +4,9 @@
  *
  * Test-instrumentation approach: mqttSetListener.js exposes `_init({
  * subscribe, findByTopic, handleRequest })` (mirroring the override hook
- * already used by mqttTopics.js/mqttCommandListener.js/healthMonitor.js)
+ * already used by mqttTopics.js/healthMonitor.js)
  * plus its subscribe callback directly as `_handleSet(topic, payload, raw,
- * retain)` -- mirroring lightingShelly.test.js's/mqttCommandListener.test.js's
+ * retain)` -- mirroring lightingShelly.test.js's
  * approach of calling the handler directly rather than going through
  * mqttClient's subscribe/dispatch machinery (already tested by
  * mqttClient.test.js).
